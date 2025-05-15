@@ -1,3 +1,5 @@
 /roms/
 /graveyard/
+/results (old)/
+/tensorboards/
 *.zip
