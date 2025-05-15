@@ -1,0 +1,51 @@
+from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
+from stable_baselines3 import A2C
+
+def main():
+    # Settings
+    settings = EnvironmentSettings()
+    settings.frame_shape = (84, 84, 1)
+    settings.characters = ("Ryu")
+
+    # Wrappers Settings
+    wrappers_settings = WrappersSettings()
+    wrappers_settings.normalize_reward = True
+    wrappers_settings.stack_frames = 5
+    wrappers_settings.add_last_action = True
+    wrappers_settings.stack_actions = 12
+    wrappers_settings.scale = True
+    wrappers_settings.exclude_image_scaling = True
+    wrappers_settings.role_relative = True
+    wrappers_settings.flatten = True
+    wrappers_settings.filter_keys = []
+
+    # Create environment
+    env, num_envs = make_sb3_env("sfiii3n", settings, wrappers_settings)
+    print("Activated {} environment(s)".format(num_envs))
+
+    print("\nStarting training ...\n")
+    agent = A2C("MultiInputPolicy", env, verbose=1)
+    agent.learn(total_timesteps=200)
+    print("\n .. training completed.")
+
+    print("\nStarting trained agent execution ...\n")
+    observation = env.reset()
+    while True:
+        env.render()
+
+        action, _state = agent.predict(observation, deterministic=True)
+        observation, reward, done, info = env.step(action)
+
+        if done:
+            observation = env.reset()
+            break
+    print("\n... trained agent execution completed.\n")
+
+    # Close the environment
+    env.close()
+
+    # Return success
+    return 0
+
+if __name__ == "__main__":
+    main()
