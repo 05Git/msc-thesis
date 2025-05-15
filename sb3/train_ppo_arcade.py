@@ -82,7 +82,6 @@ def main(cfg_file):
                          clip_range_vf=clip_range_vf, policy_kwargs=policy_kwargs,
                          tensorboard_log=tensor_board_folder, device=device)
 
-
     # Print policy network architecture
     print("Policy architecture:")
     print(agent.policy)
