@@ -8,13 +8,13 @@ from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, Environme
 from stable_baselines3 import PPO, DQN, A2C
 
 # PPO
-# diambra run -r "D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\roms" python play.py --cfgFile config_files/_/test_ppo_cfg.yaml
+# diambra run python sb3/play.py --cfgFile config_files/_/base_ppo_cfg.yaml
 
 # A2C
-# diambra run -r "D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\roms" python play.py --cfgFile config_files/_/test_a2c_cfg.yaml
+# diambra run python sb3/play.py --cfgFile config_files/_/test_a2c_cfg.yaml
 
 # DQN
-# diambra run -r "D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\roms" python play.py --cfgFile config_files/_/test_dqn_cfg.yaml
+# diambra run python sb3/play.py --cfgFile config_files/_/test_dqn_cfg.yaml
 
 def main(cfg_file):
     # Device
@@ -48,7 +48,7 @@ def main(cfg_file):
     # policy_kwargs = params["policy_kwargs"]
     policy_kwargs = {}
     # agent = PPO.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
-    agent = PPO.load(r'/results/sfiii3n/sfiii3n_ryu_ppo_no_action_stack/model/500000.zip', env=env, device=device, policy_kwargs=policy_kwargs)
+    agent = PPO.load(r'D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\results/sfiii3n/base_ppo_agent_sf3/model/300', env=env, device=device, policy_kwargs=policy_kwargs)
     # agent = A2C.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
     # agent = DQN.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
 
@@ -61,12 +61,15 @@ def main(cfg_file):
         env.render()
 
         action, _state = agent.predict(observation, deterministic=True)
-        observation, reward, done, info = env.step(action)
+        print(action)
+        observation, reward, done, info = env.step([action])
 
         # Episode end (Done condition) check
         if done:
             observation = env.reset()
             break
+
+    print(env.action_space)
 
     # Environment shutdown
     env.close()

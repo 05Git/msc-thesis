@@ -2,13 +2,16 @@ import os
 import yaml
 import json
 import argparse
+
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
-from stable_baselines3 import PPO
-import torch
 
-# diambra run -s 8 python sb3/train_ppo_arcade.py --cfgFile config_files/_/base_ppo_cfg.yaml
+import torch
+from stable_baselines3 import PPO
+import custom_wrappers
+
+# diambra run -s 12 python sb3/train_ppo_arcade.py --cfgFile config_files/_/base_ppo_cfg.yaml
 
 def main(cfg_file):
     # Device
@@ -97,6 +100,8 @@ def main(cfg_file):
     new_model_checkpoint = str(int(model_checkpoint) + time_steps)
     model_path = os.path.join(model_folder, new_model_checkpoint)
     agent.save(model_path)
+
+    print(env.action_space)
 
     # Close the environment
     env.close()

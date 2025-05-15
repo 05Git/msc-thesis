@@ -1,17 +1,16 @@
 folders:
   parent_dir: "./results/"
-  model_name: "base_ppo_agent_sf3"
+  model_name: "base_ppo_agent_samsho"
 
 settings:
-  game_id: "sfiii3n"
-  step_ratio: 1
+  game_id: "samsh5sp"
+  step_ratio: 6
   frame_shape: !!python/tuple [84, 84, 1]
   continue_game: 0.0
   action_space: "multi_discrete"
-  characters: "Ryu"
+  characters: "Haohmaru"
   difficulty: 5
   outfits: 1
-  super_art: 1
 
 env_settings:
   seed: 0
