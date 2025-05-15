@@ -2,12 +2,11 @@ import os
 import yaml
 import json
 import argparse
-import torch
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 from stable_baselines3 import PPO
-from gymnasium.wrappers import FilterObservation
+import torch
 
 # diambra run -s 8 python sb3/train_ppo_arcade.py --cfgFile config_files/_/base_ppo_cfg.yaml
 
@@ -35,7 +34,6 @@ def main(cfg_file):
 
     # Wrappers Settings
     wrappers_settings = load_settings_flat_dict(WrappersSettings, params["wrappers_settings"])
-    wrappers_settings.wrappers = [[FilterObservation, {"filter_keys" : ["frame"]}]]
 
     # Create environment
     environment_settings = params["env_settings"]
