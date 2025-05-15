@@ -6,6 +6,7 @@ import torch
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
 from stable_baselines3 import PPO, DQN, A2C
+import custom_wrappers
 
 # PPO
 # diambra run python sb3/play.py --cfgFile config_files/_/base_ppo_cfg.yaml
@@ -36,7 +37,9 @@ def main(cfg_file):
 
     # Create environment
     env, num_envs = make_sb3_env(settings.game_id, settings, wrappers_settings, render_mode="human")
+    custom_wrappers.MBTransferActionWrapper(settings.game_id, env)
     print("Activated {} environment(s)".format(num_envs))
+    print(f"Action Space: {env.action_space}")
 
     base_path = os.path.dirname(os.path.abspath(__file__))
     model_folder = os.path.join(base_path, params["folders"]["parent_dir"], params["settings"]["game_id"],
@@ -48,7 +51,11 @@ def main(cfg_file):
     # policy_kwargs = params["policy_kwargs"]
     policy_kwargs = {}
     # agent = PPO.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
-    agent = PPO.load(r'D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\results/sfiii3n/base_ppo_agent_sf3/model/300', env=env, device=device, policy_kwargs=policy_kwargs)
+    agent = PPO.load(r'D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\results/sfiii3n/base_ppo_agent_sf3/model/300',
+                     env=env,
+                     device=device,
+                     policy_kwargs=policy_kwargs,
+                     custom_objects={"action_space": env.action_space})
     # agent = A2C.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
     # agent = DQN.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
 

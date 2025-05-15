@@ -42,6 +42,7 @@ def main(cfg_file):
     environment_settings = params["env_settings"]
     seed = environment_settings["seed"]
     env, num_envs = make_sb3_env(settings.game_id, settings, wrappers_settings, seed=seed)
+    custom_wrappers.MBTransferActionWrapper(settings.game_id, env)
     print("Activated {} environment(s)".format(num_envs))
 
     # Policy param
@@ -100,8 +101,6 @@ def main(cfg_file):
     new_model_checkpoint = str(int(model_checkpoint) + time_steps)
     model_path = os.path.join(model_folder, new_model_checkpoint)
     agent.save(model_path)
-
-    print(env.action_space)
 
     # Close the environment
     env.close()
