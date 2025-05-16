@@ -11,7 +11,7 @@ import torch
 from stable_baselines3 import PPO
 import custom_wrappers
 
-# diambra run -s 12 python sb3/train_ppo_arcade.py --cfgFile config_files/_/base_ppo_cfg.yaml
+# diambra run -s 8 python sb3/train_ppo_arcade.py --cfgFile config_files/_/base_ppo_cfg.yaml
 
 def main(cfg_file):
     # Device
@@ -42,8 +42,19 @@ def main(cfg_file):
     environment_settings = params["env_settings"]
     seed = environment_settings["seed"]
     env, num_envs = make_sb3_env(settings.game_id, settings, wrappers_settings, seed=seed)
-    custom_wrappers.MBTransferActionWrapper(settings.game_id, env)
+    print(env)
+    if params["settings"]["action_space"] == SpaceTypes.DISCRETE:
+        env = custom_wrappers.VecEnvDiscreteTransferActionWrapper(env)
+    else:
+        env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
+    print('')
+    print(env)
+    print('')
+    print(f"Original action space: {env.unwrapped.action_space}")
+    print(f"Wrapped action space: {env.action_space}")
+    print('')
     print("Activated {} environment(s)".format(num_envs))
+    print('')
 
     # Policy param
     policy_kwargs = params["policy_kwargs"]
@@ -82,7 +93,7 @@ def main(cfg_file):
         agent = PPO.load(os.path.join(model_folder, model_checkpoint), env=env,
                          gamma=gamma, learning_rate=learning_rate, clip_range=clip_range,
                          clip_range_vf=clip_range_vf, policy_kwargs=policy_kwargs,
-                         tensorboard_log=tensor_board_folder, device=device)
+                         tensorboard_log=tensor_board_folder, device=device, custom_objects={"action_space": env.action_space})
 
     # Print policy network architecture
     print("Policy architecture:")

@@ -7,7 +7,7 @@ settings:
   step_ratio: 1
   frame_shape: !!python/tuple [84, 84, 1]
   continue_game: 0.0
-  action_space: "multi_discrete"
+  action_space: "discrete"
   characters: "Ryu"
   difficulty: 5
   outfits: 1
@@ -41,7 +41,7 @@ ppo_settings:
   clip_range: [0.15, 0.025] # To start
   batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
   n_epochs: 4
-  n_steps: 256
+  n_steps: 128
   autosave_freq: 100
   time_steps: 300
 

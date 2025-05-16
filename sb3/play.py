@@ -37,9 +37,11 @@ def main(cfg_file):
 
     # Create environment
     env, num_envs = make_sb3_env(settings.game_id, settings, wrappers_settings, render_mode="human")
-    custom_wrappers.MBTransferActionWrapper(settings.game_id, env)
+    env = custom_wrappers.MDTransferActionWrapper(env)
     print("Activated {} environment(s)".format(num_envs))
-    print(f"Action Space: {env.action_space}")
+    print(f"Action space: {env.action_space}")
+    print(f"Valid moves: {env.valid_moves}")
+    print(f"Valid actions: {env.valid_attacks}")
 
     base_path = os.path.dirname(os.path.abspath(__file__))
     model_folder = os.path.join(base_path, params["folders"]["parent_dir"], params["settings"]["game_id"],
@@ -68,15 +70,13 @@ def main(cfg_file):
         env.render()
 
         action, _state = agent.predict(observation, deterministic=True)
-        print(action)
-        observation, reward, done, info = env.step([action])
+        # print(action)
+        observation, reward, done, info = env.step(action)
 
         # Episode end (Done condition) check
         if done:
             observation = env.reset()
             break
-
-    print(env.action_space)
 
     # Environment shutdown
     env.close()
