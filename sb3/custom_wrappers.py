@@ -3,11 +3,15 @@ from stable_baselines3.common.vec_env import VecEnv, VecEnvWrapper
 import numpy as np
 
 class VecEnvMDTransferActionWrapper(VecEnvWrapper):
+    '''
+    VectorEnv Multi-Discrete Transfer Wrapper
+    Necessary for wrapping SubprocVecEnvs during distributed training
+    '''
     def __init__(self, venv: VecEnv, no_move_idx: int = 0, no_attack_idx: int = 0):
         super().__init__(venv=venv)
         self.valid_moves = venv.action_space.nvec[0]
         self.valid_attacks = venv.action_space.nvec[1]
-        self.action_space = gym.spaces.MultiDiscrete([9, 7]) # 8 moves, 6 attacks, plus 1 no-op each
+        self.action_space = gym.spaces.MultiDiscrete([9, 19]) # 19 attacks is the largest possible action space (MvC)
         self.no_move_idx = no_move_idx
         self.no_attack_idx = no_attack_idx
 
@@ -15,6 +19,10 @@ class VecEnvMDTransferActionWrapper(VecEnvWrapper):
         return self.venv.reset()
 
     def step_async(self, actions: np.ndarray) -> None:
+        '''
+        Checks if chosen actions are within the underlying venv's valid move list.
+        Replaces any that do not with no-op.
+        '''
         for action in actions:
             action[0] = action[0] if action[0] < self.valid_moves else self.no_move_idx
             action[1] = action[1] if action[1] < self.valid_attacks else self.no_attack_idx
@@ -24,16 +32,24 @@ class VecEnvMDTransferActionWrapper(VecEnvWrapper):
         return self.venv.step_wait()
 
 class VecEnvDiscreteTransferActionWrapper(VecEnvWrapper):
+    '''
+    VectorEnv Discrete Transfer Wrapper
+    Necessary for wrapping SubprocVecEnvs during distributed training
+    '''
     def __init__(self, venv: VecEnv, no_op_idx: int = 0):
         super().__init__(venv=venv)
         self.valid_actions = venv.action_space.n
-        self.action_space = gym.spaces.Discrete(8 + 6 + 1) # 8 moves, 6 attacks, plus 1 no-op each
+        self.action_space = gym.spaces.Discrete(27) # 27 actions is the largest possible action space (MvC)
         self.no_op_idx = no_op_idx
 
     def reset(self) -> np.ndarray:
         return self.venv.reset()
 
     def step_async(self, actions: np.ndarray) -> None:
+        '''
+        Checks if chosen actions are within the underlying venv's valid move list.
+        Replaces any that do not with no-op.
+        '''
         for action in actions:
             action = action if action < self.valid_actions else self.no_op_idx
         self.venv.step_async(actions)
@@ -46,7 +62,7 @@ class MDTransferActionWrapper(gym.Wrapper):
         super().__init__(env)
         self.valid_moves = env.action_space.nvec[0]
         self.valid_attacks = env.action_space.nvec[1]
-        self.action_space = gym.spaces.MultiDiscrete([9, 7]) # 8 moves, 6 attacks, plus 1 no-op each
+        self.action_space = gym.spaces.MultiDiscrete([9, 19]) # 19 actions is the largest possible action space (MvC)
         self.no_move_idx = no_move_idx
         self.no_attack_idx = no_attack_idx
 
@@ -77,7 +93,7 @@ class DiscreteTransferActionWrapper(gym.Wrapper):
     def __init__(self, env, no_op_idx: int = 0):
         super().__init__(env)
         self.valid_actions = env.action_space.n
-        self.action_space = gym.spaces.Discrete(8 + 6 + 1) # 8 moves, 6 attacks, plus 1 no-op
+        self.action_space = gym.spaces.Discrete(27) # 19 actions is the largest possible action space (MvC)
         self.no_op_idx = no_op_idx
 
     def reset(self, **kwargs):

@@ -1,0 +1,22 @@
+{
+    "Ryu": {
+        "mean_rwd": -4.0,
+        "std_rwd": 0.0
+    },
+    "Ken": {
+        "mean_rwd": -4.0,
+        "std_rwd": 0.0
+    },
+    "Makoto": {
+        "mean_rwd": -4.0,
+        "std_rwd": 0.0
+    },
+    "Hugo": {
+        "mean_rwd": -4.0,
+        "std_rwd": 0.0
+    },
+    "Urien": {
+        "mean_rwd": -4.0,
+        "std_rwd": 0.0
+    }
+}

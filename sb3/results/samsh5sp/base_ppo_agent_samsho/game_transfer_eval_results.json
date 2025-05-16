@@ -1,0 +1,14 @@
+{
+    "kof98umh": {
+        "mean_rwd": -5.55,
+        "std_rwd": 0.36742346141747667
+    },
+    "umk3": {
+        "mean_rwd": -4.0,
+        "std_rwd": 0.0
+    },
+    "samsh5sp": {
+        "mean_rwd": -4.0,
+        "std_rwd": 0.0
+    }
+}
