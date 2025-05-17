@@ -239,13 +239,7 @@ def main(cfg_dir, train_id, config):
 
     # Save results
     for filename, file in files.items():
-        path = os.path.join(
-            base_path, params["folders"]["parent_dir"],
-            params["settings"]["game_id"],
-            params["folders"]["model_name"],
-            filename
-        )
-        with open(path, "w") as f:
+        with open(model_folder, "w") as f:
             json.dump(file, f, indent=4)
 
     # Return success

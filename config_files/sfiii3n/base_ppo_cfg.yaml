@@ -47,7 +47,7 @@ ppo_settings:
   autosave_freq: 1_000_000
   time_steps: 2_000_000
   n_train_epochs: 5
-  n_eval_episodes: 10
+  n_eval_episodes: 5
 
   gae_lambda: 0.95
   ent_coef: 0.0

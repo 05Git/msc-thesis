@@ -14,14 +14,16 @@ settings:
 
 env_settings:
   seed: 0
+  eval_chars: !!python/tuple ["Haomaru", "Galford", "Nakoruru", "Tamtam", "Kusare"]
 
 wrappers_settings:
   normalize_reward: true
-  no_attack_buttons_combinations: true
+  normalization_factor: 0.5
+  no_attack_buttons_combinations: false
   stack_frames: 4
   dilation: 1
-  add_last_action: true
-  stack_actions: 12
+  add_last_action: false
+  stack_actions: 1
   scale: true
   exclude_image_scaling: true
   role_relative: true
@@ -40,9 +42,11 @@ ppo_settings:
   clip_range: [0.15, 0.025] # To start
   batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
   n_epochs: 4
-  n_steps: 256
-  autosave_freq: 100
-  time_steps: 300
+  n_steps: 128
+  autosave_freq: 1_000_000
+  time_steps: 2_000_000
+  n_train_epochs: 5
+  n_eval_episodes: 5
 
   gae_lambda: 0.95
   ent_coef: 0.0
