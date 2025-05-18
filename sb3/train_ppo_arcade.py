@@ -145,7 +145,7 @@ def main(cfg_dir, train_id, config):
             env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
 
         # Load the trained agent
-        agent = PPO.load(model_path, env=env,
+        agent = PPO.load(os.path.join(model_folder, model_checkpoint), env=env,
                          gamma=gamma, learning_rate=learning_rate, clip_range=clip_range,
                          clip_range_vf=clip_range_vf, policy_kwargs=policy_kwargs,
                          tensorboard_log=tensor_board_folder, device=device,
@@ -165,7 +165,6 @@ def main(cfg_dir, train_id, config):
         cfg_file = os.path.join(cfg_dir, id, config)
         yaml_file = open(cfg_file)
         params = yaml.load(yaml_file, Loader=yaml.FullLoader)
-        print("Config parameters = ", json.dumps(params, sort_keys=True, indent=4))
         yaml_file.close()
 
         # Settings
@@ -183,7 +182,7 @@ def main(cfg_dir, train_id, config):
             env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
 
         # Load the trained agent
-        agent = PPO.load(model_path, env=env,
+        agent = PPO.load(os.path.join(model_folder, model_checkpoint), env=env,
                          gamma=gamma, learning_rate=learning_rate, clip_range=clip_range,
                          clip_range_vf=clip_range_vf, policy_kwargs=policy_kwargs,
                          tensorboard_log=tensor_board_folder, device=device,
@@ -237,8 +236,20 @@ def main(cfg_dir, train_id, config):
         "game_transfer_eval_results.json": game_eval_results,
     }
 
+    # Read the cfg file
+    cfg_file = os.path.join(cfg_dir, train_id, config)
+    yaml_file = open(cfg_file)
+    params = yaml.load(yaml_file, Loader=yaml.FullLoader)
+    yaml_file.close()
+
     # Save results
     for filename, file in files.items():
+        path = os.path.join(
+            base_path,
+            params["folders"]["parent_dir"],
+            params["settings"]["game_id"],
+            params["folders"]["model_name"]
+        )
         with open(model_folder, "w") as f:
             json.dump(file, f, indent=4)
 

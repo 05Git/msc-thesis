@@ -6,15 +6,15 @@ settings:
   game_id: "umk3"
   step_ratio: 6
   frame_shape: !!python/tuple [84, 84, 1]
-  continue_game: 0.0
+  continue_game: 0.
   action_space: "multi_discrete"
   characters: "Liu Kang"
-  difficulty: 5
+  difficulty: 2
   outfits: 1
 
 env_settings:
   seed: 0
-  eval_chars: !!python/tuple ["Liu Kang", "Kitana", "Shang Tsung", "Nightwolf", "Jax"]
+  eval_chars: !!python/tuple ["Kitana", "Shang Tsung", "Nightwolf", "Jax"]
 
 wrappers_settings:
   normalize_reward: true
@@ -41,19 +41,19 @@ ppo_settings:
   learning_rate: [2.5e-4, 2.5e-6] # To start
   clip_range: [0.15, 0.025] # To start
   batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
-  n_epochs: 4
-  n_steps: 128
-  autosave_freq: 1_000_000
-  time_steps: 2_000_000
-  n_train_epochs: 5
+  n_epochs: 10
+  n_steps: 64
+  autosave_freq: 250_000
+  time_steps: 500_000
+  n_train_epochs: 4
   n_eval_episodes: 5
 
   gae_lambda: 0.95
-  ent_coef: 0.0
-  vf_coef: 0.5
+  ent_coef: 0.02
+  vf_coef: 1.0
   max_grad_norm: 0.5
   use_sde: false
   sde_sample_freq: -1
-  normalize_advantage: false # Whether to normalize or not the advantage
+  normalize_advantage: true # Whether to normalize or not the advantage
   stats_window_size: 100 # Window size for the rollout logging, specifying the number of episodes to average the reported success rate, mean episode length, and mean reward over
   target_kl: null

@@ -44,9 +44,9 @@ ppo_settings:
   batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
   n_epochs: 4
   n_steps: 128
-  autosave_freq: 1_000_000
-  time_steps: 2_000_000
-  n_train_epochs: 5
+  autosave_freq: 250_000
+  time_steps: 500_000
+  n_train_epochs: 4
   n_eval_episodes: 5
 
   gae_lambda: 0.95
