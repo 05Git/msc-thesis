@@ -19,13 +19,14 @@ ppo_settings:
   time_steps: 500_000
   n_train_epochs: 4
   n_eval_episodes: 5
+  seeds: !!python/tuple [ 0 ]
 
   gae_lambda: 0.95
-  ent_coef: 0.0
+  ent_coef: 0.02
   vf_coef: 0.5
   max_grad_norm: 0.5
   use_sde: false
   sde_sample_freq: -1
-  normalize_advantage: false # Whether to normalize or not the advantage
+  normalize_advantage: true # Whether to normalize or not the advantage
   stats_window_size: 100 # Window size for the rollout logging, specifying the number of episodes to average the reported success rate, mean episode length, and mean reward over
   target_kl: null

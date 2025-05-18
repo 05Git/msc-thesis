@@ -10,11 +10,11 @@ from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, Environme
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 
 import torch
-from stable_baselines3 import PPO
+from stable_baselines3 import DQN
 from stable_baselines3.common.evaluation import evaluate_policy
 import custom_wrappers
 
-# diambra run -s 8 python sb3/train_ppo_transfer.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer/--no-charTransfer
+# diambra run -s 8 python sb3/train_dqn_transfer.py ---policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer/--no-charTransfer
 
 def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
     # Game IDs
@@ -53,42 +53,32 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     os.makedirs(model_folder, exist_ok=True)
 
 
-    # Sequential training: Train model sequentially on games, then eval on each one trained so far
-    # Single game training: Focus on one particular game
-    # First, check if there's a train ID. If so, only want one character one game.
-    # If no train ID, check char or game.
-    # Load an environment for each game or each character.
-    # Train for each base env, eval on each env or each char.
-
-    # PPO settings
-    ppo_settings = policy_params["ppo_settings"]
-    policy = ppo_settings["policy_type"]
-    gamma = ppo_settings["gamma"]
-    model_checkpoint = ppo_settings["model_checkpoint"]
-    n_eval_episodes = ppo_settings["n_eval_episodes"]
-    learning_rate = linear_schedule(ppo_settings["learning_rate"][0], ppo_settings["learning_rate"][1])
-    clip_range = linear_schedule(ppo_settings["clip_range"][0], ppo_settings["clip_range"][1])
-    clip_range_vf = clip_range
-    batch_size = ppo_settings["batch_size"]
-    n_epochs = ppo_settings["n_epochs"]
-    n_steps = ppo_settings["n_steps"]
-    gae_lambda = ppo_settings["gae_lambda"]
-    ent_coef = ppo_settings["ent_coef"]
-    vf_coef = ppo_settings["vf_coef"]
-    max_grad_norm = ppo_settings["max_grad_norm"]
-    use_sde = ppo_settings["use_sde"]
-    sde_sample_freq = ppo_settings["sde_sample_freq"]
-    normalize_advantage = ppo_settings["normalize_advantage"]
-    stats_window_size = ppo_settings["stats_window_size"]
-    target_kl = ppo_settings["target_kl"]
-    time_steps = ppo_settings["time_steps"]
-    autosave_freq = ppo_settings["autosave_freq"]
-    seeds = ppo_settings["seeds"]
+    # DQN settings
+    dqn_settings = policy_params["dqn_settings"]
+    policy = dqn_settings["policy_type"]
+    gamma = dqn_settings["gamma"]
+    model_checkpoint = dqn_settings["model_checkpoint"]
+    learning_rate = linear_schedule(dqn_settings["learning_rate"][0], dqn_settings["learning_rate"][1])
+    buffer_size = dqn_settings["buffer_size"]
+    learning_starts = dqn_settings["learning_starts"]
+    batch_size = dqn_settings["batch_size"]
+    tau = dqn_settings["tau"]
+    train_freq = dqn_settings["train_freq"]
+    gradient_steps = dqn_settings["gradient_steps"]
+    replay_buffer_class = dqn_settings["replay_buffer_class"]
+    replay_buffer_kwargs = dqn_settings["replay_buffer_kwargs"]
+    stats_window_size = dqn_settings["stats_window_size"]
+    target_update_interval = dqn_settings["target_update_interval"]
+    exploration_fraction = dqn_settings["exploration_fraction"]
+    exploration_initial_eps = dqn_settings["exploration_initial_eps"]
+    exploration_final_eps = dqn_settings["exploration_final_eps"]
+    max_grad_norm = dqn_settings["max_grad_norm"]
+    autosave_freq = dqn_settings["autosave_freq"]
+    time_steps = dqn_settings["time_steps"]
+    n_eval_episodes = dqn_settings["n_eval_episodes"]
 
     # Policy kwargs
     policy_kwargs = policy_params["policy_kwargs"]
-    if not policy_kwargs:
-        policy_kwargs = {}
 
     # Load wrappers settings as dictionary
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
@@ -105,27 +95,24 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             for character in game_settings["characters"]:
                 game_settings["characters"] = character
                 env_settings = settings.copy()
-                env_settings.update(game_settings)
-                env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
+                env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings.update(game_settings))
                 envs_settings.append(env_settings)
         else:
             train_epochs = len(game_settings["characters"])
             game_settings["characters"] = game_settings["characters"][0]
             env_settings = settings.copy()
-            env_settings.update(game_settings)
-            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
+            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings.update(game_settings))
             envs_settings = [env_settings for _ in range(train_epochs)]
     else:
         for game_id in game_ids:
             game_settings = settings_params["settings"][game_id]
             game_settings["characters"] = game_settings["characters"][0]
             env_settings = settings.copy()
-            env_settings.update(game_settings)
-            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
+            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings.update(game_settings))
             envs_settings.append(env_settings)
 
     eval_results = {}
-    for seed in seeds:
+    for seed in settings["seeds"]:
         for epoch in range(len(envs_settings)):
             epoch_settings = envs_settings[epoch]
             env, num_envs = make_sb3_env(epoch_settings.game_id, epoch_settings, wrappers_settings, seed=seed)
@@ -141,13 +128,11 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             checkpoint_path = os.path.join(model_folder, model_checkpoint)
             if int(model_checkpoint) > 0 and os.path.exists(checkpoint_path):
                 print("\n Checkpoint found, loading model.")
-                agent = PPO.load(
+                agent = DQN.load(
                     os.path.join(model_folder, model_checkpoint),
                     env=env,
                     gamma=gamma,
                     learning_rate=learning_rate,
-                    clip_range=clip_range,
-                    clip_range_vf=clip_range_vf,
                     policy_kwargs=policy_kwargs,
                     tensorboard_log=tensor_board_folder,
                     device=device,
@@ -155,27 +140,27 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                 )
             else:
                 print("\n No or invalid checkpoint given, creating new model")
-                agent = PPO(
+                agent = DQN(
                     policy,
                     env,
                     verbose=1,
                     gamma=gamma,
                     batch_size=batch_size,
-                    n_epochs=n_epochs,
-                    n_steps=n_steps,
                     learning_rate=learning_rate,
-                    clip_range=clip_range,
-                    clip_range_vf=clip_range_vf,
+                    learning_starts=learning_starts,
+                    buffer_size=buffer_size,
+                    tau=tau,
+                    train_freq=train_freq,
+                    gradient_steps=gradient_steps,
+                    target_update_interval=target_update_interval,
+                    exploration_fraction=exploration_fraction,
+                    exploration_initial_eps=exploration_initial_eps,
+                    exploration_final_eps=exploration_final_eps,
+                    replay_buffer_class=replay_buffer_class,
+                    replay_buffer_kwargs=replay_buffer_kwargs,
                     policy_kwargs=policy_kwargs,
-                    gae_lambda=gae_lambda,
-                    ent_coef=ent_coef,
-                    vf_coef=vf_coef,
                     max_grad_norm=max_grad_norm,
-                    use_sde=use_sde,
-                    sde_sample_freq=sde_sample_freq,
-                    normalize_advantage=normalize_advantage,
                     stats_window_size=stats_window_size,
-                    target_kl=target_kl,
                     tensorboard_log=tensor_board_folder,
                     device=device,
                     seed=seed
@@ -242,7 +227,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
     x = np.linspace(1, len(envs_settings), num=len(envs_settings))
     colours = ["r", "g", "b", "y", "m", "c", "k"]
-    for seed, idx in enumerate(seeds):
+    for seed, idx in enumerate(settings["seed"]):
         mean = [eval_results[seed][epoch]["mean_rwd"] for epoch in eval_results[seed]]
         std = [eval_results[seed][epoch]["std_rwd"] for epoch in eval_results[seed]]
         pos_std = [sum(y) for y in zip(mean, std)]

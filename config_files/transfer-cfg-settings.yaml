@@ -10,7 +10,7 @@ wrappers_settings:
   exclude_image_scaling: true
   role_relative: true
   flatten: true
-  filter_keys: ["frame"]
+  filter_keys: ["frame", "stage", "timer", "own_side", "own_character", "opp_side", "opp_character"]
 
 settings:
   shared:
@@ -19,7 +19,6 @@ settings:
     continue_game: 0.
     action_space: "multi_discrete"
     outfits: 1
-    seeds: !!python/tuple [ 0 ]
 
   sfiii3n:
     game_id: "sfiii3n"

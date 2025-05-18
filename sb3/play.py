@@ -5,74 +5,94 @@ import argparse
 import torch
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
-from stable_baselines3 import PPO, DQN, A2C
+from stable_baselines3 import PPO, DQN
 import custom_wrappers
 
 # PPO
-# diambra run python sb3/play.py --cfgFile config_files/_/base_ppo_cfg.yaml
-
-# A2C
-# diambra run python sb3/play.py --cfgFile config_files/_/test_a2c_cfg.yaml
+# diambra run python sb3/play.py --policyCfg ./config_files/transfer-cfg-ppo.yaml --settingsCfg ./config_files/transfer-cfg-settings.yaml --gameID _
 
 # DQN
-# diambra run python sb3/play.py --cfgFile config_files/_/test_dqn_cfg.yaml
+# diambra run python sb3/play.py --policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
 
-def main(cfg_file):
+def main(policy_cfg: str, settings_cfg: str, game_id: str):
     # Device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
-    # Read the cfg file
-    yaml_file = open(cfg_file)
-    params = yaml.load(yaml_file, Loader=yaml.FullLoader)
-    print("Config parameters = ", json.dumps(params, sort_keys=True, indent=4))
-    yaml_file.close()
+    # Read the cfg files
+    policy_file = open(policy_cfg)
+    policy_params = yaml.load(policy_file, Loader=yaml.FullLoader)
+    policy_file.close()
 
-    # Settings
-    params["settings"]["action_space"] = SpaceTypes.DISCRETE if params["settings"]["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
-    settings = load_settings_flat_dict(EnvironmentSettings, params["settings"])
+    settings_file = open(settings_cfg)
+    settings_params = yaml.load(settings_file, Loader=yaml.FullLoader)
+    settings_file.close()
 
-    # Wrappers Settings
-    wrappers_settings = load_settings_flat_dict(WrappersSettings, params["wrappers_settings"])
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    model_folder = os.path.join(
+        base_path,
+        policy_params["folders"]["parent_dir"],
+        policy_params["folders"]["model_name"],
+        "model"
+    )
+
+    # Load wrappers settings as dictionary
+    wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
+    # Load shared settings
+    settings = settings_params["settings"]["shared"]
+    # Set action space type
+    settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
+    settings["step_ratio"] = 1
+    game_settings = settings_params["settings"][game_id]
+    game_settings["characters"] = game_settings["characters"][0]
+    settings.update(game_settings)
+    settings = load_settings_flat_dict(EnvironmentSettings, settings)
 
     # Create environment
     env, num_envs = make_sb3_env(settings.game_id, settings, wrappers_settings, render_mode="human")
-    env = custom_wrappers.MDTransferActionWrapper(env)
+    if settings.action_space == SpaceTypes.DISCRETE:
+        env = custom_wrappers.DiscreteTransferActionWrapper(env)
+    else:
+        env = custom_wrappers.MDTransferActionWrapper(env)
     print("Activated {} environment(s)".format(num_envs))
     print(f"Action space: {env.action_space}")
     print(f"Valid moves: {env.valid_moves}")
     print(f"Valid actions: {env.valid_attacks}")
 
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    model_folder = os.path.join(base_path, params["folders"]["parent_dir"], params["settings"]["game_id"],
-                                params["folders"]["model_name"], "model")
-    ppo_settings = params["ppo_settings"]
-    model_checkpoint = ppo_settings["model_checkpoint"]
-
     # Policy param
-    # policy_kwargs = params["policy_kwargs"]
-    policy_kwargs = {}
-    # agent = PPO.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
-    agent = PPO.load(r'D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\results/sfiii3n/base_ppo_agent_sf3/model/300',
-                     env=env,
-                     device=device,
-                     policy_kwargs=policy_kwargs,
-                     custom_objects={"action_space": env.action_space})
-    # agent = A2C.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
-    # agent = DQN.load(os.path.join(model_folder, model_checkpoint), env=env, device=device, policy_kwargs=policy_kwargs)
+    policy_kwargs = policy_params["policy_kwargs"]
+    if not policy_kwargs:
+        policy_kwargs = {}
+    agent = PPO.load(
+        r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\results\kof98umh\base_ppo_agent_kof\model\2000000",
+        env=env,
+        device=device,
+        policy_kwargs=policy_kwargs,
+        custom_objects={ "action_space" : env.action_space }
+    )
+    # agent = PPO.load(
+    #     os.path.join(model_folder, policy_params["model_checkpoint"]),
+    #     env=env,
+    #     device=device,
+    #     policy_kwargs=policy_kwargs,
+    #     custom_objects={ "action_space" : env.action_space }
+    # )
+    # agent = DQN.load(
+    #     os.path.join(model_folder, policy_params["model_checkpoint"]),
+    #     env=env,
+    #     policy_kwargs=policy_kwargs,
+    #     device=device,
+    #     custom_objects={"action_space": env.action_space}
+    # )
 
     # Environment reset
     observation = env.reset()
 
     # Agent-Environment interaction loop
     while True:
-        # (Optional) Environment rendering
         env.render()
-
         action, _state = agent.predict(observation, deterministic=True)
-        # print(action)
-        observation, reward, done, info = env.step(action)
-
+        observation, reward, done, trunc, info = env.step(action)
         # Episode end (Done condition) check
         if done:
             observation = env.reset()
@@ -86,8 +106,10 @@ def main(cfg_file):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cfgFile", type=str, required=True, help="Configuration file")
+    parser.add_argument("--policyCfg", type=str, required=True, help="Policy config")
+    parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
+    parser.add_argument("--gameID", type=str, required=True, help="Game to evaluate")
     opt = parser.parse_args()
     print(opt)
 
-    main(opt.cfgFile)
+    main(opt.policyCfg, opt.settingsCfg, opt.gameID)
