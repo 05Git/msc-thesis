@@ -14,9 +14,9 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 import custom_wrappers
 
-# diambra run -s 8 python sb3/train_ppo_transfer.py ---cfgFile transfer-cfg-ppo.yaml --trainID _ --charTransfer/--no-charTransfer
+# diambra run -s 8 python sb3/train_ppo_transfer.py ---policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer/--no-charTransfer
 
-def main(cfg_file: str, train_id: str | None, char_transfer: bool):
+def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
     # Game IDs
     game_ids = [
         "sfiii3n",
@@ -28,22 +28,26 @@ def main(cfg_file: str, train_id: str | None, char_transfer: bool):
     # Device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # Read the cfg file
-    yaml_file = open(cfg_file)
-    params = yaml.load(yaml_file, Loader=yaml.FullLoader)
-    yaml_file.close()
+    # Read the cfg files
+    policy_file = open(policy_cfg)
+    policy_params = yaml.load(policy_cfg, Loader=yaml.FullLoader)
+    policy_file.close()
+
+    settings_file = open(settings_cfg)
+    settings_params = yaml.load(settings_cfg, Loader=yaml.FullLoader)
+    settings_file.close()
 
     base_path = os.path.dirname(os.path.abspath(__file__))
     model_folder = os.path.join(
         base_path,
-        params["folders"]["parent_dir"],
-        params["folders"]["model_name"],
+        policy_params["folders"]["parent_dir"],
+        policy_params["folders"]["model_name"],
         "model"
     )
     tensor_board_folder = os.path.join(
         base_path,
-        params["folders"]["parent_dir"],
-        params["folders"]["model_name"],
+        policy_params["folders"]["parent_dir"],
+        policy_params["folders"]["model_name"],
         "tb"
     )
     os.makedirs(model_folder, exist_ok=True)
@@ -57,7 +61,7 @@ def main(cfg_file: str, train_id: str | None, char_transfer: bool):
     # Train for each base env, eval on each env or each char.
 
     # PPO settings
-    ppo_settings = params["ppo_settings"]
+    ppo_settings = policy_params["ppo_settings"]
     policy = ppo_settings["policy_type"]
     gamma = ppo_settings["gamma"]
     model_checkpoint = ppo_settings["model_checkpoint"]
@@ -81,19 +85,19 @@ def main(cfg_file: str, train_id: str | None, char_transfer: bool):
     autosave_freq = ppo_settings["autosave_freq"]
 
     # Policy kwargs
-    policy_kwargs = params["policy_kwargs"]
+    policy_kwargs = policy_params["policy_kwargs"]
 
     # Load wrappers settings as dictionary
-    wrappers_settings = load_settings_flat_dict(WrappersSettings, params["wrappers_settings"])
+    wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
     # Load shared settings
-    settings = params["settings"]["shared"]
+    settings = settings_params["settings"]["shared"]
     # Set action space type
     settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
 
     envs_settings = []
     # Load game specific settings
     if train_id:
-        game_settings = params["settings"][train_id]
+        game_settings = settings_params["settings"][train_id]
         if char_transfer:
             for character in game_settings["characters"]:
                 game_settings["characters"] = character
@@ -108,7 +112,7 @@ def main(cfg_file: str, train_id: str | None, char_transfer: bool):
             envs_settings = [env_settings for _ in range(train_epochs)]
     else:
         for game_id in game_ids:
-            game_settings = params["settings"][game_id]
+            game_settings = settings_params["settings"][game_id]
             game_settings["characters"] = game_settings["characters"][0]
             env_settings = settings.copy()
             env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings.update(game_settings))
@@ -261,10 +265,11 @@ def main(cfg_file: str, train_id: str | None, char_transfer: bool):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cfgFile", type=str, required=True, help="Config file for training")
+    parser.add_argument("--policyCfg", type=str, required=True, help="Policy config")
+    parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
     parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on")
     parser.add_argument('--charTransfer', action=argparse.BooleanOptionalAction, required=True, help="Evaluate character transfer or not")
     opt = parser.parse_args()
     print(opt)
 
-    main(opt.cfgFile, opt.trainID, opt.charTransfer)
+    main(opt.policyCfg, opt.settingsCfg, opt.trainID, opt.charTransfer)
