@@ -14,7 +14,7 @@ from stable_baselines3 import DQN
 from stable_baselines3.common.evaluation import evaluate_policy
 import custom_wrappers
 
-# diambra run -s 8 python sb3/train_dqn_transfer.py ---policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer/--no-charTransfer
+# diambra run python sb3/train_dqn_transfer.py --policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer/--no-charTransfer
 
 def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
     # Game IDs
@@ -76,6 +76,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     autosave_freq = dqn_settings["autosave_freq"]
     time_steps = dqn_settings["time_steps"]
     n_eval_episodes = dqn_settings["n_eval_episodes"]
+    seeds = dqn_settings["seeds"]
 
     # Policy kwargs
     policy_kwargs = policy_params["policy_kwargs"]
@@ -95,32 +96,32 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             for character in game_settings["characters"]:
                 game_settings["characters"] = character
                 env_settings = settings.copy()
-                env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings.update(game_settings))
+                env_settings.update(game_settings)
+                env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
                 envs_settings.append(env_settings)
         else:
             train_epochs = len(game_settings["characters"])
             game_settings["characters"] = game_settings["characters"][0]
             env_settings = settings.copy()
-            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings.update(game_settings))
+            env_settings.update(game_settings)
+            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
             envs_settings = [env_settings for _ in range(train_epochs)]
     else:
         for game_id in game_ids:
             game_settings = settings_params["settings"][game_id]
             game_settings["characters"] = game_settings["characters"][0]
             env_settings = settings.copy()
-            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings.update(game_settings))
+            env_settings.update(game_settings)
+            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
             envs_settings.append(env_settings)
 
     eval_results = {}
-    for seed in settings["seeds"]:
+    for seed in seeds:
         eval_results.update({seed: {}})
         for epoch in range(len(envs_settings)):
             epoch_settings = envs_settings[epoch]
             env, num_envs = make_sb3_env(epoch_settings.game_id, epoch_settings, wrappers_settings, seed=seed)
-            if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                env = custom_wrappers.VecEnvDiscreteTransferActionWrapper(env)
-            else:
-                env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
+            # env = custom_wrappers.DiscreteTransferActionWrapper(env)
             print(f"\nOriginal action space: {env.unwrapped.action_space}")
             print(f"Wrapped action space: {env.action_space}")
             print("\nActivated {} environment(s)".format(num_envs))
@@ -191,10 +192,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             std_rwd_results = []
             for eval_settings in eval_envs:
                 env, num_envs = make_sb3_env(eval_settings.game_id, eval_settings, wrappers_settings, seed=seed)
-                if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                    env = custom_wrappers.VecEnvDiscreteTransferActionWrapper(env)
-                else:
-                    env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
+                # env = custom_wrappers.DiscreteTransferActionWrapper(env)
                 mean_reward, std_reward = evaluate_policy(
                     model=agent,
                     env=env,
@@ -242,7 +240,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
     x = np.linspace(1, len(envs_settings), num=len(envs_settings))
     colours = ["r", "g", "b", "y", "m", "c", "k"]
-    for idx, seed in enumerate(settings["seed"]):
+    for idx, seed in enumerate(seeds):
         mean = [eval_results[seed][epoch]["mean_rwd"] for epoch in eval_results[seed]]
         std = [eval_results[seed][epoch]["std_rwd"] for epoch in eval_results[seed]]
         pos_std = [sum(y) for y in zip(mean, std)]

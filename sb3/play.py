@@ -55,34 +55,39 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     else:
         env = custom_wrappers.MDTransferActionWrapper(env)
     print("Activated {} environment(s)".format(num_envs))
-    print(f"Action space: {env.action_space}")
-    print(f"Valid moves: {env.valid_moves}")
-    print(f"Valid actions: {env.valid_attacks}")
 
     # Policy param
     policy_kwargs = policy_params["policy_kwargs"]
     if not policy_kwargs:
         policy_kwargs = {}
-    agent = PPO.load(
-        r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\results\kof98umh\base_ppo_agent_kof\model\2000000",
-        env=env,
-        device=device,
-        policy_kwargs=policy_kwargs,
-        custom_objects={ "action_space" : env.action_space }
-    )
     # agent = PPO.load(
-    #     os.path.join(model_folder, policy_params["model_checkpoint"]),
+    #     r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\results\kof98umh\base_ppo_agent_kof\model\2000000",
     #     env=env,
     #     device=device,
     #     policy_kwargs=policy_kwargs,
     #     custom_objects={ "action_space" : env.action_space }
     # )
+    agent = PPO.load(
+        os.path.join(
+            model_folder,
+            f"seed_{policy_params['ppo_settings']['seeds'][0]}",
+            policy_params["ppo_settings"]["model_checkpoint"]
+        ),
+        env=env,
+        device=device,
+        policy_kwargs=policy_kwargs,
+        custom_objects={ "action_space" : env.action_space }
+    )
     # agent = DQN.load(
-    #     os.path.join(model_folder, policy_params["model_checkpoint"]),
+    #     os.path.join(
+    #         model_folder,
+    #         f"seed_{policy_params['dqn_settings']['seeds'][0]}",
+    #         policy_params["dqn_settings"]["model_checkpoint"]
+    #     ),
     #     env=env,
     #     policy_kwargs=policy_kwargs,
     #     device=device,
-    #     custom_objects={"action_space": env.action_space}
+    #     # custom_objects={"action_space": env.action_space}
     # )
 
     # Environment reset

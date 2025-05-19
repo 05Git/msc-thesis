@@ -10,7 +10,7 @@ wrappers_settings:
   exclude_image_scaling: true
   role_relative: true
   flatten: true
-  filter_keys: ["frame", "stage", "timer", "own_side", "own_character", "opp_side", "opp_character"]
+  filter_keys: [ "frame", "stage", "timer", "own_side", "opp_side" ]
 
 settings:
   shared:
@@ -22,9 +22,8 @@ settings:
 
   sfiii3n:
     game_id: "sfiii3n"
-    characters: !!python/tuple [ "Ryu", "Ken" ]
-#    characters: !!python/tuple [ "Ryu", "Ken", "Makoto", "Hugo", "Urien" ]
-    difficulty: 4
+    characters: !!python/tuple [ "Ryu", "Ken", "Makoto", "Hugo", "Urien" ]
+    difficulty: 8
     super_art: 1
 
   kof98umh:
