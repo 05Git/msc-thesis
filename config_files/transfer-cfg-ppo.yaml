@@ -1,6 +1,6 @@
 folders:
-  parent_dir: "./transfer_agents/"
-  model_name: "test_ppo_agent"
+  parent_dir: "transfer_agents"
+  model_name: "test_ppo_agent_2"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -12,11 +12,11 @@ ppo_settings:
   model_checkpoint: "0"
   learning_rate: [2.5e-4, 2.5e-6] # To start
   clip_range: [0.15, 0.025] # To start
-  batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
+  batch_size: 1536 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
   n_epochs: 4
   n_steps: 128
   autosave_freq: 250_000
-  time_steps: 500_000
+  time_steps: 1_000_000
   n_train_epochs: 4
   n_eval_episodes: 5
   seeds: !!python/tuple [ 0 ]

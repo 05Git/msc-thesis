@@ -113,6 +113,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
     eval_results = {}
     for seed in settings["seeds"]:
+        eval_results.update({seed: {}})
         for epoch in range(len(envs_settings)):
             epoch_settings = envs_settings[epoch]
             env, num_envs = make_sb3_env(epoch_settings.game_id, epoch_settings, wrappers_settings, seed=seed)
@@ -171,8 +172,12 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             print(agent.policy)
 
             # Create the callback: autosave every few steps
-            auto_save_callback = AutoSave(check_freq=autosave_freq, num_envs=num_envs,
-                                          save_path=model_folder, filename_prefix=model_checkpoint + "_")
+            auto_save_callback = AutoSave(
+                check_freq=autosave_freq,
+                num_envs=num_envs,
+                save_path=model_folder + f"seed_{seed}",
+                filename_prefix=model_checkpoint + "_"
+            )
 
             agent.learn(total_timesteps=time_steps, callback=auto_save_callback)
             env.close()
@@ -204,12 +209,10 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             mean_rwd = sum(mean_rwd_results) / len(mean_rwd_results)
             std_rwd = sum(std_rwd_results) / len(std_rwd_results)
             print("Evaluation Reward: {} (avg) ± {} (std)".format(mean_rwd, std_rwd))
-            eval_results.update({
-                seed: {
-                    epoch: {
-                        "mean_rwd": mean_rwd,
-                        "std_rwd": std_rwd
-                    }
+            eval_results[seed].update({
+                epoch: {
+                    "mean_rwd": mean_rwd,
+                    "std_rwd": std_rwd
                 }
             })
 
@@ -217,6 +220,18 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             model_checkpoint = str(int(model_checkpoint) + time_steps)
             model_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
             agent.save(model_path)
+
+
+    # Save results
+    file_path = os.path.join(
+        base_path,
+        policy_params["folders"]["parent_dir"],
+        policy_params["folders"]["model_name"],
+        "model",
+        "evaluation_results.json"
+    )
+    with open(file_path, "w") as f:
+        json.dump(eval_results, f, indent=4)
 
 
     print("-----------------------------")
@@ -227,7 +242,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
     x = np.linspace(1, len(envs_settings), num=len(envs_settings))
     colours = ["r", "g", "b", "y", "m", "c", "k"]
-    for seed, idx in enumerate(settings["seed"]):
+    for idx, seed in enumerate(settings["seed"]):
         mean = [eval_results[seed][epoch]["mean_rwd"] for epoch in eval_results[seed]]
         std = [eval_results[seed][epoch]["std_rwd"] for epoch in eval_results[seed]]
         pos_std = [sum(y) for y in zip(mean, std)]
@@ -236,7 +251,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
         plt.fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
     plt.grid()
     plt.legend()
-    plt.ylabel("Average Reward Across 10 Evaluation Episodes")
+    plt.ylabel("Average Reward Across Evaluation Episodes")
     if train_id:
         if char_transfer:
             plt.xlabel("Number of Characters")
@@ -245,11 +260,6 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     else:
         plt.xlabel("Number of Games")
     plt.show()
-
-    # Save results
-    file = { "evaluation_results.json" : eval_results }
-    with open(model_folder, "w") as f:
-        json.dump(file, f, indent=4)
 
     # Return success
     return 0

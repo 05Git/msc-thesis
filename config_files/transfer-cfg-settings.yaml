@@ -22,7 +22,8 @@ settings:
 
   sfiii3n:
     game_id: "sfiii3n"
-    characters: !!python/tuple [ "Ryu", "Ken", "Makoto", "Hugo", "Urien" ]
+    characters: !!python/tuple [ "Ryu", "Ken" ]
+#    characters: !!python/tuple [ "Ryu", "Ken", "Makoto", "Hugo", "Urien" ]
     difficulty: 4
     super_art: 1
 
