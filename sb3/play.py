@@ -9,7 +9,7 @@ from stable_baselines3 import PPO, DQN
 import custom_wrappers
 
 # PPO
-# diambra run python sb3/play.py --policyCfg ./config_files/transfer-cfg-ppo.yaml --settingsCfg ./config_files/transfer-cfg-settings.yaml --gameID _
+# diambra run python sb3/play.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
 
 # DQN
 # diambra run python sb3/play.py --policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
@@ -65,7 +65,10 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #     env=env,
     #     device=device,
     #     policy_kwargs=policy_kwargs,
-    #     custom_objects={ "action_space" : env.action_space }
+    #     custom_objects={
+    #         "action_space" : env.action_space,
+    #         "observation_space" : env.observation_space,
+    #     }
     # )
     agent = PPO.load(
         os.path.join(
@@ -76,7 +79,10 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
         env=env,
         device=device,
         policy_kwargs=policy_kwargs,
-        custom_objects={ "action_space" : env.action_space }
+        custom_objects={
+            "action_space" : env.action_space,
+            "observation_space" : env.observation_space,
+        }
     )
     # agent = DQN.load(
     #     os.path.join(
@@ -87,16 +93,19 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #     env=env,
     #     policy_kwargs=policy_kwargs,
     #     device=device,
-    #     # custom_objects={"action_space": env.action_space}
+    #     custom_objects={
+    #         "action_space" : env.action_space,
+    #         "observation_space" : env.observation_space,
+    #     }
     # )
 
     # Environment reset
-    observation = env.reset()
+    obs = env.reset()
 
     # Agent-Environment interaction loop
     while True:
         env.render()
-        action, _state = agent.predict(observation, deterministic=True)
+        action, _state = agent.predict(obs, deterministic=True)
         observation, reward, done, trunc, info = env.step(action)
         # Episode end (Done condition) check
         if done:
@@ -115,6 +124,5 @@ if __name__ == '__main__':
     parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
     parser.add_argument("--gameID", type=str, required=True, help="Game to evaluate")
     opt = parser.parse_args()
-    print(opt)
 
     main(opt.policyCfg, opt.settingsCfg, opt.gameID)

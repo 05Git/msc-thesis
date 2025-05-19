@@ -138,7 +138,10 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                     policy_kwargs=policy_kwargs,
                     tensorboard_log=tensor_board_folder,
                     device=device,
-                    custom_objects={ "action_space" : env.action_space }
+                    custom_objects={
+                        "action_space" : env.action_space,
+                        "observation_space" : env.observation_space,
+                    }
                 )
             else:
                 print("\n No or invalid checkpoint given, creating new model")

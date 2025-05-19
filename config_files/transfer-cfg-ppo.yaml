@@ -1,22 +1,22 @@
 folders:
   parent_dir: "transfer_agents"
-  model_name: "test_ppo_agent"
+  model_name: "test_ppo_agent_cnn"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
   #net_arch: [64, 64]
 
 ppo_settings:
-  policy_type: "MultiInputPolicy"
-  gamma: 0.7
-  model_checkpoint: "2500000"
+  policy_type: "CnnPolicy"
+  gamma: 0.94
+  model_checkpoint: "15200"
   learning_rate: [2.5e-4, 2.5e-6] # To start
   clip_range: [0.15, 0.025] # To start
   batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
   n_epochs: 4
   n_steps: 128
   autosave_freq: 250_000
-  time_steps: 250_000
+  time_steps: 3000
   n_train_epochs: 4
   n_eval_episodes: 5
   seeds: !!python/tuple [ 0 ]

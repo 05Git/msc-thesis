@@ -152,10 +152,13 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                     policy_kwargs=policy_kwargs,
                     tensorboard_log=tensor_board_folder,
                     device=device,
-                    custom_objects={ "action_space" : env.action_space }
+                    custom_objects={
+                        "action_space" : env.action_space,
+                        "observation_space" : env.observation_space,
+                    }
                 )
             else:
-                print("\n No or invalid checkpoint given, creating new model")
+                print("\nNo or invalid checkpoint given, creating new model")
                 agent = PPO(
                     policy,
                     env,
@@ -282,6 +285,5 @@ if __name__ == "__main__":
     parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on")
     parser.add_argument('--charTransfer', action=argparse.BooleanOptionalAction, required=True, help="Evaluate character transfer or not")
     opt = parser.parse_args()
-    print(opt)
 
     main(opt.policyCfg, opt.settingsCfg, opt.trainID, opt.charTransfer)

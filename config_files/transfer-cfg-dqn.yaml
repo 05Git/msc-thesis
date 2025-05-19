@@ -8,7 +8,7 @@ policy_kwargs:
   #dueling: True
 
 dqn_settings:
-  policy_type: "MultiInputPolicy"
+  policy_type: "CnnPolicy"
   gamma: 0.94
   model_checkpoint: "250000"
   learning_rate: [2.5e-4, 2.5e-6] # To start

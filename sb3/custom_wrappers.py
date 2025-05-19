@@ -14,9 +14,15 @@ class VecEnvMDTransferActionWrapper(VecEnvWrapper):
         self.action_space = gym.spaces.MultiDiscrete([9, 19]) # 19 attacks is the largest possible action space (MvC)
         self.no_move_idx = no_move_idx
         self.no_attack_idx = no_attack_idx
+        self.observation_space = gym.spaces.Box(0, 255, (84, 84, 4), np.uint8)
+        if hasattr(venv, "image_space_keys"):
+            self.image_space_keys = venv.image_space_keys
+        else:
+            self.image_space_keys = ["frame"]
 
     def reset(self) -> np.ndarray:
-        return self.venv.reset()
+        obs = self.venv.reset()
+        return obs["frame"]
 
     def step_async(self, actions: np.ndarray) -> None:
         '''
@@ -29,7 +35,8 @@ class VecEnvMDTransferActionWrapper(VecEnvWrapper):
         self.venv.step_async(actions)
 
     def step_wait(self):
-        return self.venv.step_wait()
+        obs, reward, done, info = self.venv.step_wait()
+        return obs["frame"], reward, done, info
 
 class VecEnvDiscreteTransferActionWrapper(VecEnvWrapper):
     '''
@@ -41,9 +48,15 @@ class VecEnvDiscreteTransferActionWrapper(VecEnvWrapper):
         self.valid_actions = venv.action_space.n
         self.action_space = gym.spaces.Discrete(27) # 27 actions is the largest possible action space (MvC)
         self.no_op_idx = no_op_idx
+        self.observation_space = gym.spaces.Box(0, 255, (84, 84, 4), np.uint8)
+        if hasattr(venv, "image_space_keys"):
+            self.image_space_keys = venv.image_space_keys
+        else:
+            self.image_space_keys = ["frame"]
 
     def reset(self) -> np.ndarray:
-        return self.venv.reset()
+        obs = self.venv.reset()
+        return obs["frame"]
 
     def step_async(self, actions: np.ndarray) -> None:
         '''
@@ -55,7 +68,8 @@ class VecEnvDiscreteTransferActionWrapper(VecEnvWrapper):
         self.venv.step_async(actions)
 
     def step_wait(self):
-        return self.venv.step_wait()
+        obs, reward, done, info = self.venv.step_wait()
+        return obs["frame"], reward, done, info
 
 class MDTransferActionWrapper(gym.Wrapper):
     def __init__(self, env, no_move_idx: int = 0, no_attack_idx: int = 0):
@@ -65,9 +79,15 @@ class MDTransferActionWrapper(gym.Wrapper):
         self.action_space = gym.spaces.MultiDiscrete([9, 19]) # 19 actions is the largest possible action space (MvC)
         self.no_move_idx = no_move_idx
         self.no_attack_idx = no_attack_idx
+        self.observation_space = gym.spaces.Box(0, 255, (4, 84, 84), np.uint8)
+        if hasattr(env, "image_space_keys"):
+            self.image_space_keys = env.image_space_keys
+        else:
+            self.image_space_keys = ["frame"]
 
     def reset(self, **kwargs):
-        return self.env.reset(**kwargs)
+        obs = self.env.reset(**kwargs)
+        return obs["frame"]
 
     def step(self, action):
         '''
@@ -78,16 +98,13 @@ class MDTransferActionWrapper(gym.Wrapper):
         move = move_idx if move_idx < self.valid_moves else self.no_move_idx
         attack = attack_idx if attack_idx < self.valid_attacks else self.no_attack_idx
         step_result = self.env.step([[move, attack]])
-
         # Unpack the step result depending on the API.
         if len(step_result) == 4:
             obs, reward, done, info = step_result
-            terminated = done
-            truncated = False
+            trunc = False
         else:
             obs, reward, terminated, truncated, info = step_result
-
-        return obs, reward, terminated, truncated, info
+        return obs["frame"], reward, done, trunc, info
 
 class DiscreteTransferActionWrapper(gym.Wrapper):
     def __init__(self, env, no_op_idx: int = 0):
@@ -95,9 +112,15 @@ class DiscreteTransferActionWrapper(gym.Wrapper):
         self.valid_actions = env.action_space.n
         self.action_space = gym.spaces.Discrete(27) # 19 actions is the largest possible action space (MvC)
         self.no_op_idx = no_op_idx
+        self.observation_space = gym.spaces.Box(0, 255, (4, 84, 84), np.uint8)
+        if hasattr(env, "image_space_keys"):
+            self.image_space_keys = env.image_space_keys
+        else:
+            self.image_space_keys = ["frame"]
 
     def reset(self, **kwargs):
-        return self.env.reset(**kwargs)
+        obs, info = self.env.reset(**kwargs)
+        return obs["frame"], info
 
     def step(self, action):
         '''
@@ -105,4 +128,11 @@ class DiscreteTransferActionWrapper(gym.Wrapper):
         If not, replaces it with no-op.
         '''
         action = action if action < self.valid_actions else self.no_op_idx
-        return self.env.step(action)
+        step_result = self.env.step(action)
+        # Unpack the step result depending on the API.
+        if len(step_result) == 4:
+            obs, reward, done, info = step_result
+            trunc = False
+        else:
+            obs, reward, terminated, truncated, info = step_result
+        return obs["frame"], reward, done, trunc, info
