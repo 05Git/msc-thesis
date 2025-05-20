@@ -17,9 +17,8 @@ dqn_settings:
   batch_size: 64 # Minibatch size for each gradient update
   tau: 1.0
   train_freq: !!python/tuple [4, "step"]
-  autosave_freq: 50_000
-  time_steps: 50_000
-  n_train_epochs: 4
+  autosave_freq: 100_000
+  time_steps: 1_000_000
   n_eval_episodes: 5
   seeds: !!python/tuple [ 0 ]
 

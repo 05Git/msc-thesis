@@ -109,12 +109,11 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                 env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
                 envs_settings.append(env_settings)
         else:
-            train_epochs = len(game_settings["characters"])
             game_settings["characters"] = game_settings["characters"][0]
             env_settings = settings.copy()
             env_settings.update(game_settings)
             env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
-            envs_settings = [env_settings for _ in range(train_epochs)]
+            envs_settings.append(env_settings)
     else:
         for game_id in game_ids:
             game_settings = settings_params["settings"][game_id]
@@ -139,7 +138,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             print("\nActivated {} environment(s)".format(num_envs))
 
             # Load policy params if checkpoint exists, else make a new agent
-            checkpoint_path = os.path.join(model_folder, model_checkpoint)
+            checkpoint_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
             if int(model_checkpoint) > 0 and os.path.exists(checkpoint_path):
                 print("\n Checkpoint found, loading model.")
                 agent = PPO.load(

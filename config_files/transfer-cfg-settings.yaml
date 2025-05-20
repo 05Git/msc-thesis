@@ -17,13 +17,13 @@ settings:
     step_ratio: 6
     frame_shape: !!python/tuple [ 84, 84, 1 ]
     continue_game: 0.
-    action_space: "multi_discrete"
+    action_space: "discrete"
     outfits: 1
 
   sfiii3n:
     game_id: "sfiii3n"
     characters: !!python/tuple [ "Ryu", "Ken", "Makoto", "Hugo", "Urien" ]
-    difficulty: 4
+    difficulty: 6
     super_art: 1
 
   kof98umh:
@@ -33,16 +33,16 @@ settings:
       !!python/tuple [ "Iori", "Billy", "Chang" ],
       !!python/tuple [ "Chin", "Clark", "Mai" ],
     ]
-    difficulty: 4
+    difficulty: 6
     fighting_style: 1
     ultimate_style: !!python/tuple [ 1, 1, 1 ]
 
   umk3:
     game_id: "umk3"
     characters: !!python/tuple [ "Liu Kang", "Kitana", "Shang Tsung", "Nightwolf", "Jax" ]
-    difficulty: 3
+    difficulty: 4
 
   samsh5sp:
     game_id: "samsh5sp"
     characters: !!python/tuple [ "Haohmaru", "Galford", "Nakoruru", "Tamtam", "Kusare" ]
-    difficulty: 4
+    difficulty: 6

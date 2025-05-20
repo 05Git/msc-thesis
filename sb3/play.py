@@ -60,22 +60,9 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     policy_kwargs = policy_params["policy_kwargs"]
     if not policy_kwargs:
         policy_kwargs = {}
-    # agent = PPO.load(
-    #     r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\results\kof98umh\base_ppo_agent_kof\model\2000000",
-    #     env=env,
-    #     device=device,
-    #     policy_kwargs=policy_kwargs,
-    #     custom_objects={
-    #         "action_space" : env.action_space,
-    #         "observation_space" : env.observation_space,
-    #     }
-    # )
+
     agent = PPO.load(
-        os.path.join(
-            model_folder,
-            f"seed_{policy_params['ppo_settings']['seeds'][0]}",
-            policy_params["ppo_settings"]["model_checkpoint"]
-        ),
+        r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\transfer_agents\test_ppo_agent_cnn\model\0_autosave_6000000.zip",
         env=env,
         device=device,
         policy_kwargs=policy_kwargs,
@@ -84,6 +71,20 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
             "observation_space" : env.observation_space,
         }
     )
+    # agent = PPO.load(
+    #     os.path.join(
+    #         model_folder,
+    #         f"seed_{policy_params['ppo_settings']['seeds'][0]}",
+    #         policy_params["ppo_settings"]["model_checkpoint"]
+    #     ),
+    #     env=env,
+    #     device=device,
+    #     policy_kwargs=policy_kwargs,
+    #     custom_objects={
+    #         "action_space" : env.action_space,
+    #         "observation_space" : env.observation_space,
+    #     }
+    # )
     # agent = DQN.load(
     #     os.path.join(
     #         model_folder,
