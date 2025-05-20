@@ -189,8 +189,12 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             print(agent.policy)
 
             # Create the callback: autosave every few steps
-            auto_save_callback = AutoSave(check_freq=autosave_freq, num_envs=num_envs,
-                                          save_path=model_folder, filename_prefix=model_checkpoint + "_")
+            auto_save_callback = AutoSave(
+                check_freq=autosave_freq,
+                num_envs=num_envs,
+                save_path=model_folder + f"seed_{seed}",
+                filename_prefix=model_checkpoint + "_"
+            )
 
             agent.learn(total_timesteps=time_steps, callback=auto_save_callback)
             env.close()

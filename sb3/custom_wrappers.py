@@ -79,6 +79,72 @@ class MDTransferActionWrapper(gym.Wrapper):
         self.action_space = gym.spaces.MultiDiscrete([9, 19]) # 19 actions is the largest possible action space (MvC)
         self.no_move_idx = no_move_idx
         self.no_attack_idx = no_attack_idx
+        self.observation_space = gym.spaces.Box(0, 255, (84, 84, 4), np.uint8)
+        if hasattr(env, "image_space_keys"):
+            self.image_space_keys = env.image_space_keys
+        else:
+            self.image_space_keys = ["frame"]
+
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        return obs["frame"]
+
+    def step(self, action):
+        '''
+        Checks if a chosen action is within the underlying env's valid move list.
+        If not, replaces it with no-op.
+        '''
+        move_idx, attack_idx = action[0]
+        move = move_idx if move_idx < self.valid_moves else self.no_move_idx
+        attack = attack_idx if attack_idx < self.valid_attacks else self.no_attack_idx
+        step_result = self.env.step([[move, attack]])
+        # Unpack the step result depending on the API.
+        if len(step_result) == 4:
+            obs, reward, done, info = step_result
+            trunc = False
+        else:
+            obs, reward, done, trunc, info = step_result
+        return obs["frame"], reward, done, trunc, info
+
+class DiscreteTransferActionWrapper(gym.Wrapper):
+    def __init__(self, env, no_op_idx: int = 0):
+        super().__init__(env)
+        self.valid_actions = env.action_space.n
+        self.action_space = gym.spaces.Discrete(27) # 19 actions is the largest possible action space (MvC)
+        self.no_op_idx = no_op_idx
+        self.observation_space = gym.spaces.Box(0, 255, (84, 84, 4), np.uint8)
+        if hasattr(env, "image_space_keys"):
+            self.image_space_keys = env.image_space_keys
+        else:
+            self.image_space_keys = ["frame"]
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return obs["frame"], info
+
+    def step(self, action):
+        '''
+        Checks if the chosen action is within the underlying env's valid move list.
+        If not, replaces it with no-op.
+        '''
+        action = action if action < self.valid_actions else self.no_op_idx
+        step_result = self.env.step(action)
+        # Unpack the step result depending on the API.
+        if len(step_result) == 4:
+            obs, reward, done, info = step_result
+            trunc = False
+        else:
+            obs, reward, done, trunc, info = step_result
+        return obs["frame"], reward, done, trunc, info
+
+class MDPlayWrapper(gym.Wrapper):
+    def __init__(self, env, no_move_idx: int = 0, no_attack_idx: int = 0):
+        super().__init__(env)
+        self.valid_moves = env.action_space.nvec[0]
+        self.valid_attacks = env.action_space.nvec[1]
+        self.action_space = gym.spaces.MultiDiscrete([9, 19]) # 19 actions is the largest possible action space (MvC)
+        self.no_move_idx = no_move_idx
+        self.no_attack_idx = no_attack_idx
         self.observation_space = gym.spaces.Box(0, 255, (4, 84, 84), np.uint8)
         if hasattr(env, "image_space_keys"):
             self.image_space_keys = env.image_space_keys
@@ -103,10 +169,10 @@ class MDTransferActionWrapper(gym.Wrapper):
             obs, reward, done, info = step_result
             trunc = False
         else:
-            obs, reward, terminated, truncated, info = step_result
+            obs, reward, done, trunc, info = step_result
         return obs["frame"], reward, done, trunc, info
 
-class DiscreteTransferActionWrapper(gym.Wrapper):
+class DiscretePlayWrapper(gym.Wrapper):
     def __init__(self, env, no_op_idx: int = 0):
         super().__init__(env)
         self.valid_actions = env.action_space.n
@@ -134,5 +200,5 @@ class DiscreteTransferActionWrapper(gym.Wrapper):
             obs, reward, done, info = step_result
             trunc = False
         else:
-            obs, reward, terminated, truncated, info = step_result
+            obs, reward, done, trunc, info = step_result
         return obs["frame"], reward, done, trunc, info

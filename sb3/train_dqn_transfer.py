@@ -80,6 +80,8 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
     # Policy kwargs
     policy_kwargs = policy_params["policy_kwargs"]
+    if not policy_kwargs:
+        policy_kwargs = {}
 
     # Load wrappers settings as dictionary
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
@@ -100,12 +102,11 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                 env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
                 envs_settings.append(env_settings)
         else:
-            train_epochs = len(game_settings["characters"])
             game_settings["characters"] = game_settings["characters"][0]
             env_settings = settings.copy()
             env_settings.update(game_settings)
             env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
-            envs_settings = [env_settings for _ in range(train_epochs)]
+            envs_settings.append(env_settings)
     else:
         for game_id in game_ids:
             game_settings = settings_params["settings"][game_id]
@@ -120,8 +121,15 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
         eval_results.update({seed: {}})
         for epoch in range(len(envs_settings)):
             epoch_settings = envs_settings[epoch]
-            env, num_envs = make_sb3_env(epoch_settings.game_id, epoch_settings, wrappers_settings, seed=seed)
-            # env = custom_wrappers.DiscreteTransferActionWrapper(env)
+            env, num_envs = make_sb3_env(
+                epoch_settings.game_id,
+                epoch_settings,
+                wrappers_settings,
+                seed=seed,
+                no_vec=True,
+                use_subprocess=False
+            )
+            env = custom_wrappers.DiscreteTransferActionWrapper(env)
             print(f"\nOriginal action space: {env.unwrapped.action_space}")
             print(f"Wrapped action space: {env.action_space}")
             print("\nActivated {} environment(s)".format(num_envs))
@@ -131,7 +139,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             if int(model_checkpoint) > 0 and os.path.exists(checkpoint_path):
                 print("\n Checkpoint found, loading model.")
                 agent = DQN.load(
-                    os.path.join(model_folder, model_checkpoint),
+                    os.path.join(model_folder, f"seed_{seed}", model_checkpoint),
                     env=env,
                     gamma=gamma,
                     learning_rate=learning_rate,
@@ -144,7 +152,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                     }
                 )
             else:
-                print("\n No or invalid checkpoint given, creating new model")
+                print("\nNo or invalid checkpoint given, creating new model")
                 agent = DQN(
                     policy,
                     env,
@@ -194,8 +202,15 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             mean_rwd_results = []
             std_rwd_results = []
             for eval_settings in eval_envs:
-                env, num_envs = make_sb3_env(eval_settings.game_id, eval_settings, wrappers_settings, seed=seed)
-                # env = custom_wrappers.DiscreteTransferActionWrapper(env)
+                env, num_envs = make_sb3_env(
+                    eval_settings.game_id,
+                    eval_settings,
+                    wrappers_settings,
+                    seed=seed,
+                    no_vec=True,
+                    use_subprocess=False
+                )
+                env = custom_wrappers.DiscreteTransferActionWrapper(env)
                 mean_reward, std_reward = evaluate_policy(
                     model=agent,
                     env=env,

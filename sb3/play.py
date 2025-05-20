@@ -49,28 +49,34 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     settings = load_settings_flat_dict(EnvironmentSettings, settings)
 
     # Create environment
-    env, num_envs = make_sb3_env(settings.game_id, settings, wrappers_settings, render_mode="human")
+    env, num_envs = make_sb3_env(
+        settings.game_id,
+        settings,
+        wrappers_settings,
+        render_mode="human",
+        no_vec=True,
+        use_subprocess=False
+    )
     if settings.action_space == SpaceTypes.DISCRETE:
-        env = custom_wrappers.DiscreteTransferActionWrapper(env)
+        env = custom_wrappers.DiscretePlayWrapper(env)
     else:
-        env = custom_wrappers.MDTransferActionWrapper(env)
-    print("Activated {} environment(s)".format(num_envs))
+        env = custom_wrappers.MDPlayWrapper(env)
 
     # Policy param
     policy_kwargs = policy_params["policy_kwargs"]
     if not policy_kwargs:
         policy_kwargs = {}
 
-    agent = PPO.load(
-        r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\transfer_agents\test_ppo_agent_cnn\model\0_autosave_6000000.zip",
-        env=env,
-        device=device,
-        policy_kwargs=policy_kwargs,
-        custom_objects={
-            "action_space" : env.action_space,
-            "observation_space" : env.observation_space,
-        }
-    )
+    # agent = PPO.load(
+    #     r"/sb3/transfer_agents/test_ppo_agent_cnn/model/seed_0/0_autosave_6000000",
+    #     env=env,
+    #     device=device,
+    #     policy_kwargs=policy_kwargs,
+    #     custom_objects={
+    #         "action_space" : env.action_space,
+    #         "observation_space" : env.observation_space,
+    #     }
+    # )
     # agent = PPO.load(
     #     os.path.join(
     #         model_folder,
@@ -85,6 +91,16 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #         "observation_space" : env.observation_space,
     #     }
     # )
+    agent = DQN.load(
+        r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\transfer_agents\test_dqn_agent_cnn\model\seed_0\250000_autosave_300000",
+        env=env,
+        policy_kwargs=policy_kwargs,
+        device=device,
+        custom_objects={
+            "action_space" : env.action_space,
+            "observation_space" : env.observation_space,
+        }
+    )
     # agent = DQN.load(
     #     os.path.join(
     #         model_folder,
@@ -100,23 +116,16 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #     }
     # )
 
-    # Environment reset
-    obs = env.reset()
-
-    # Agent-Environment interaction loop
+    obs, _ = env.reset()
     while True:
         env.render()
         action, _state = agent.predict(obs, deterministic=True)
-        observation, reward, done, trunc, info = env.step(action)
-        # Episode end (Done condition) check
-        if done:
-            observation = env.reset()
+        observation, reward, done, trunc, info = env.step(int(action))
+        if done or trunc:
             break
 
-    # Environment shutdown
     env.close()
 
-    # Return success
     return 0
 
 if __name__ == '__main__':
