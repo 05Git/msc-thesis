@@ -3,3 +3,5 @@
 /results (old)/
 /tensorboards/
 *.zip
+/sb3/recordings/
+*.diambra

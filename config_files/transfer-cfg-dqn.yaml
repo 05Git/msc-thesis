@@ -1,6 +1,6 @@
 folders:
   parent_dir: "transfer_agents"
-  model_name: "test_dqn_agent_cnn"
+  model_name: "test_dqn_agent_cnn_2"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -9,16 +9,16 @@ policy_kwargs:
 
 dqn_settings:
   policy_type: "CnnPolicy"
-  gamma: 0.94
-  model_checkpoint: "250000"
+  gamma: 0.9
+  model_checkpoint: "0"
   learning_rate: [2.5e-4, 2.5e-6] # To start
   buffer_size: 100_000
   learning_starts: 100 # how many steps of the model to collect transitions for before learning starts
   batch_size: 64 # Minibatch size for each gradient update
   tau: 1.0
   train_freq: !!python/tuple [4, "step"]
-  autosave_freq: 100_000
-  time_steps: 1_000_000
+  autosave_freq: 50_000
+  time_steps: 200_000
   n_eval_episodes: 5
   seeds: !!python/tuple [ 0 ]
 

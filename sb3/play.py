@@ -91,22 +91,8 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #         "observation_space" : env.observation_space,
     #     }
     # )
-    agent = DQN.load(
-        r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\transfer_agents\test_dqn_agent_cnn\model\seed_0\250000_autosave_300000",
-        env=env,
-        policy_kwargs=policy_kwargs,
-        device=device,
-        custom_objects={
-            "action_space" : env.action_space,
-            "observation_space" : env.observation_space,
-        }
-    )
     # agent = DQN.load(
-    #     os.path.join(
-    #         model_folder,
-    #         f"seed_{policy_params['dqn_settings']['seeds'][0]}",
-    #         policy_params["dqn_settings"]["model_checkpoint"]
-    #     ),
+    #     r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\transfer_agents\test_dqn_agent_cnn_2\model\seed_0\0_autosave_100000",
     #     env=env,
     #     policy_kwargs=policy_kwargs,
     #     device=device,
@@ -115,6 +101,20 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #         "observation_space" : env.observation_space,
     #     }
     # )
+    agent = DQN.load(
+        os.path.join(
+            model_folder,
+            f"seed_{policy_params['dqn_settings']['seeds'][0]}",
+            policy_params["dqn_settings"]["model_checkpoint"]
+        ),
+        env=env,
+        policy_kwargs=policy_kwargs,
+        device=device,
+        custom_objects={
+            "action_space" : env.action_space,
+            "observation_space" : env.observation_space,
+        }
+    )
 
     obs, _ = env.reset()
     while True:

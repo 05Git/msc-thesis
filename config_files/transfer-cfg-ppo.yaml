@@ -8,7 +8,7 @@ policy_kwargs:
 
 ppo_settings:
   policy_type: "CnnPolicy"
-  gamma: 0.85
+  gamma: 0.9
   model_checkpoint: "0"
   learning_rate: [2.5e-4, 2.5e-6] # To start
   clip_range: [0.15, 0.025] # To start
@@ -16,7 +16,7 @@ ppo_settings:
   n_epochs: 4
   n_steps: 128
   autosave_freq: 1_000_000
-  time_steps: 10_000_000
+  time_steps: 200
   n_eval_episodes: 5
   seeds: !!python/tuple [ 0 ]
 
