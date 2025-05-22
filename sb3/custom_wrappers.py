@@ -29,9 +29,11 @@ class VecEnvMDTransferActionWrapper(VecEnvWrapper):
         Checks if chosen actions are within the underlying venv's valid move list.
         Replaces any that do not with no-op.
         '''
-        for action in actions:
-            action[0] = action[0] if action[0] < self.valid_moves else self.no_move_idx
-            action[1] = action[1] if action[1] < self.valid_attacks else self.no_attack_idx
+        actions = np.array([
+            (move if move < self.valid_moves else self.no_move_idx,
+            attack if attack < self.valid_attacks else self.no_attack_idx)
+            for move, attack in actions
+        ])
         self.venv.step_async(actions)
 
     def step_wait(self):
@@ -63,8 +65,10 @@ class VecEnvDiscreteTransferActionWrapper(VecEnvWrapper):
         Checks if chosen actions are within the underlying venv's valid move list.
         Replaces any that do not with no-op.
         '''
-        for action in actions:
-            action = action if action < self.valid_actions else self.no_op_idx
+        actions = np.array([
+            action if action < self.valid_actions else self.no_op_idx
+            for action in actions
+        ])
         self.venv.step_async(actions)
 
     def step_wait(self):

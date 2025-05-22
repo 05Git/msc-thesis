@@ -1,6 +1,6 @@
 folders:
   parent_dir: "transfer_agents"
-  model_name: "test_dqn_agent_cnn_2"
+  model_name: "dqn_agent"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -18,7 +18,7 @@ dqn_settings:
   tau: 1.0
   train_freq: !!python/tuple [4, "step"]
   autosave_freq: 50_000
-  time_steps: 200_000
+  time_steps: 200
   n_eval_episodes: 5
   seeds: !!python/tuple [ 0 ]
 

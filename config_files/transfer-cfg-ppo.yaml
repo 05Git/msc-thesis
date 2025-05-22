@@ -1,6 +1,6 @@
 folders:
   parent_dir: "transfer_agents"
-  model_name: "test_ppo_agent_cnn"
+  model_name: "ppo_agent"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]

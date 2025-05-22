@@ -17,7 +17,7 @@ settings:
     step_ratio: 6
     frame_shape: !!python/tuple [ 84, 84, 1 ]
     continue_game: 0.
-    action_space: "discrete"
+    action_space: "multi_discrete"
     outfits: 1
 
   sfiii3n:

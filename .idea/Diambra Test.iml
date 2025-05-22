@@ -12,8 +12,9 @@
       <excludeFolder url="file://$MODULE_DIR$/results (old)/sfiii3n/sfiii3n_ryu_ppo/model" />
       <excludeFolder url="file://$MODULE_DIR$/results (old)/sfiii3n/sfiii3n_ryu_ppo_no_action_stack/model" />
       <excludeFolder url="file://$MODULE_DIR$/roms" />
+      <excludeFolder url="file://$MODULE_DIR$/sb3-venv" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.11 (Diambra)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.11 (Diambra) (2)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
