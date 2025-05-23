@@ -13,6 +13,11 @@ import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 
+import imitation
+from imitation.algorithms import density as db
+from imitation.data import types
+from imitation.util import util
+
 import custom_wrappers
 import utils
 

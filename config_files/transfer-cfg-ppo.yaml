@@ -1,6 +1,6 @@
 folders:
   parent_dir: "transfer_agents"
-  model_name: "ppo_agent"
+  model_name: "sb3_ppo_agent"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
