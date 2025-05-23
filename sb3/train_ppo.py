@@ -15,7 +15,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 import custom_wrappers
 import utils
 
-# diambra run -s 8 python sb3/train_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer/--no-charTransfer
+# diambra run -s 8 python sb3/train_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer _
 
 def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
     # Game IDs
@@ -25,6 +25,9 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
         "umk3",
         "samsh5sp"
     ]
+    
+    if train_id not in game_ids:
+        train_id = None
 
     # Device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -286,7 +289,7 @@ if __name__ == "__main__":
     parser.add_argument("--policyCfg", type=str, required=True, help="Policy config")
     parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
     parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on")
-    parser.add_argument('--charTransfer', action=argparse.BooleanOptionalAction, required=True, help="Evaluate character transfer or not")
+    parser.add_argument('--charTransfer', type=int, required=True, help="Evaluate character transfer or not")
     opt = parser.parse_args()
 
-    main(opt.policyCfg, opt.settingsCfg, opt.trainID, opt.charTransfer)
+    main(opt.policyCfg, opt.settingsCfg, opt.trainID, bool(opt.charTransfer))
