@@ -5,18 +5,18 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 
+import torch
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
-
-import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import VecTransposeImage
 
 import custom_wrappers
 import utils
 
-# diambra run -s 8 python sb3/train_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer _
+# diambra run -g -s 8 python sb3/train_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer _
 
 def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
     # Game IDs
@@ -129,9 +129,9 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             epoch_settings = envs_settings[epoch]
             env, num_envs = make_sb3_env(epoch_settings.game_id, epoch_settings, wrappers_settings, seed=seed)
             if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                env = custom_wrappers.VecEnvDiscreteTransferActionWrapper(env)
+                env = custom_wrappers.VecEnvDiscreteTransferWrapper(env)
             else:
-                env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
+                env = custom_wrappers.VecEnvMDTransferWrapper(env)
             print(f"\nOriginal action space: {env.unwrapped.action_space}")
             print(f"Wrapped action space: {env.action_space}")
             print("\nActivated {} environment(s)".format(num_envs))
@@ -208,8 +208,10 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             model_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
             agent.save(model_path)
 
+            del agent
+
             if not train_id or char_transfer:
-                eval_envs = envs_settings[:epoch]
+                eval_envs = envs_settings[:epoch + 1]
             else:
                 eval_envs = [epoch_settings]
 
@@ -217,18 +219,32 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             std_rwd_results = []
             for eval_settings in eval_envs:
                 env, num_envs = make_sb3_env(eval_settings.game_id, eval_settings, wrappers_settings, seed=seed)
-                if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                    env = custom_wrappers.VecEnvDiscreteTransferActionWrapper(env)
+                if eval_settings.action_space == SpaceTypes.DISCRETE:
+                    env = custom_wrappers.VecEnvDiscreteTransferWrapper(env)
                 else:
-                    env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
+                    env = custom_wrappers.VecEnvMDTransferWrapper(env)
+                env = VecTransposeImage(env)
+                agent = PPO.load(
+                    model_path,
+                    env=env,
+                    policy_kwargs=policy_kwargs,
+                    tensorboard_log=tensor_board_folder,
+                    device=device,
+                    custom_objects={
+                        "action_space" : env.action_space,
+                        "observation_space" : env.observation_space,
+                    }
+                )
+
                 mean_reward, std_reward = evaluate_policy(
                     model=agent,
                     env=env,
                     n_eval_episodes=n_eval_episodes,
                     deterministic=True,
-                    render=True
+                    render=False
                 )
                 env.close()
+                del agent
                 mean_rwd_results.append(mean_reward)
                 std_rwd_results.append(std_reward)
 

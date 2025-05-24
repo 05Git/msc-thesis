@@ -3,20 +3,25 @@ import yaml
 import json
 import argparse
 import torch
+import numpy as np
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
 from stable_baselines3 import PPO, DQN
+from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
+
 import custom_wrappers
+import utils
 
 # PPO
-# diambra run python sb3/play.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
+# diambra run -g python sb3/play.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
 
 # DQN
-# diambra run python sb3/play.py --policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
+# diambra run -g python sb3/play.py --policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
 
 def main(policy_cfg: str, settings_cfg: str, game_id: str):
     # Device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
     # Read the cfg files
@@ -48,19 +53,22 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     settings.update(game_settings)
     settings = load_settings_flat_dict(EnvironmentSettings, settings)
 
+    seed = policy_params['ppo_settings']['seeds'][0]
+    utils.set_global_seed(seed)
+
     # Create environment
     env, num_envs = make_sb3_env(
         settings.game_id,
         settings,
         wrappers_settings,
-        render_mode="human",
-        no_vec=True,
-        use_subprocess=False
+        seed=seed,
+        no_vec=True
     )
     if settings.action_space == SpaceTypes.DISCRETE:
-        env = custom_wrappers.DiscretePlayWrapper(env)
+        env = custom_wrappers.DiscreteTransferWrapper(env)
     else:
-        env = custom_wrappers.MDPlayWrapper(env)
+        env = custom_wrappers.MDTransferWrapper(env)
+    env = VecTransposeImage(DummyVecEnv([lambda: env]))
 
     # Policy param
     policy_kwargs = policy_params["policy_kwargs"]
@@ -77,20 +85,21 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #         "observation_space" : env.observation_space,
     #     }
     # )
-    # agent = PPO.load(
-    #     os.path.join(
-    #         model_folder,
-    #         f"seed_{policy_params['ppo_settings']['seeds'][0]}",
-    #         policy_params["ppo_settings"]["model_checkpoint"]
-    #     ),
-    #     env=env,
-    #     device=device,
-    #     policy_kwargs=policy_kwargs,
-    #     custom_objects={
-    #         "action_space" : env.action_space,
-    #         "observation_space" : env.observation_space,
-    #     }
-    # )
+    agent = PPO.load(
+        os.path.join(
+            model_folder,
+            f"seed_{seed}",
+            policy_params["ppo_settings"]["model_checkpoint"]
+        ),
+        env=env,
+        device=device,
+        policy_kwargs=policy_kwargs,
+        custom_objects={
+            "action_space" : env.action_space,
+            "observation_space" : env.observation_space,
+        }
+    )
+    print("agent loaded")
     # agent = DQN.load(
     #     r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\transfer_agents\test_dqn_agent_cnn_2\model\seed_0\0_autosave_100000",
     #     env=env,
@@ -101,28 +110,37 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #         "observation_space" : env.observation_space,
     #     }
     # )
-    agent = DQN.load(
-        os.path.join(
-            model_folder,
-            f"seed_{policy_params['dqn_settings']['seeds'][0]}",
-            policy_params["dqn_settings"]["model_checkpoint"]
-        ),
-        env=env,
-        policy_kwargs=policy_kwargs,
-        device=device,
-        custom_objects={
-            "action_space" : env.action_space,
-            "observation_space" : env.observation_space,
-        }
-    )
+    # agent = DQN.load(
+    #     os.path.join(
+    #         model_folder,
+    #         f"seed_{seed}",
+    #         policy_params["dqn_settings"]["model_checkpoint"]
+    #     ),
+    #     env=env,
+    #     policy_kwargs=policy_kwargs,
+    #     device=device,
+    #     custom_objects={
+    #         "action_space" : env.action_space,
+    #         "observation_space" : env.observation_space,
+    #     }
+    # )
 
-    obs, _ = env.reset()
-    while True:
-        env.render()
-        action, _state = agent.predict(obs, deterministic=True)
-        observation, reward, done, trunc, info = env.step(int(action))
-        if done or trunc:
-            break
+    # obs, _ = env.reset()
+    # while True:
+    #     action, _state = agent.predict(obs, deterministic=True)
+    #     if settings.action_space == SpaceTypes.DISCRETE:
+    #         action = int(action)
+    #     observation, reward, done, trunc, info = env.step(action)
+    #     if done or trunc:
+    #         break
+    mean_reward, std_reward = evaluate_policy(
+        model=agent,
+        env=env,
+        n_eval_episodes=policy_params["ppo_settings"]["n_eval_episodes"],
+        deterministic=True,
+        render=False
+    )
+    print ("evaluated")
 
     env.close()
 

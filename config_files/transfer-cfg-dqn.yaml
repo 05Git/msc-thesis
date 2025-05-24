@@ -1,5 +1,5 @@
 folders:
-  parent_dir: "transfer_agents"
+  parent_dir: "dqn_agents"
   model_name: "sb3_dqn_agent"
 
 policy_kwargs:

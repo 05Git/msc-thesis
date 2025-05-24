@@ -19,6 +19,7 @@ settings:
     continue_game: 0.
     action_space: "multi_discrete"
     outfits: 1
+    splash_screen: false
 
   sfiii3n:
     game_id: "sfiii3n"

@@ -13,15 +13,37 @@ import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 
-import imitation
-from imitation.algorithms import density as db
-from imitation.data import types
-from imitation.util import util
+import tempfile
+from diambra.arena.utils.diambra_data_loader import DiambraDataLoader
+from imitation.data.types import TrajectoryWithRew
+from imitation.algorithms import bc
+from imitation.data import rollout
+# from imitation.algorithms.dagger import SimpleDAggerTrainer
 
 import custom_wrappers
-import utils
+import sb3.utils as utils
 
 # diambra run -s 8 python sb3/train_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer _
+
+def get_trajectory(datasets: list):
+    trajectories = []
+    for dataset in datasets:
+        obs = np.array([data["obs"] for data in dataset.episode_data])
+        obs = np.concatenate([obs, [np.zeros_like(dataset.episode_data[-1]["obs"])]], axis=0) # obs expected to be one entry longer than other arrays
+        acts = np.array([data["action"] for data in dataset.episode_data])
+        rews = np.array([data["reward"] for data in dataset.episode_data], dtype=np.float16)
+        dones = np.array([data["terminated"] or data["truncated"] for data in dataset.episode_data])
+        infos = np.array([data["info"] for data in dataset.episode_data])
+
+        trajectories.append(TrajectoryWithRew(
+            obs=obs,
+            acts=acts,
+            rews=rews,
+            terminal=dones,
+            infos=infos
+        ))
+
+    return rollout.flatten_trajectories_with_rew(trajectories)
 
 def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
     # Game IDs

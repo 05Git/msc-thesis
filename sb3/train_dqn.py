@@ -15,7 +15,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 import custom_wrappers
 import utils
 
-# diambra run python sb3/train_dqn.py --policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer _
+# diambra run -g python sb3/train_dqn.py --policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer _
 
 def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
     # Game IDs
@@ -134,7 +134,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                 no_vec=True,
                 use_subprocess=False
             )
-            env = custom_wrappers.DiscreteTransferActionWrapper(env)
+            env = custom_wrappers.DiscreteTransferWrapper(env)
             print(f"\nOriginal action space: {env.unwrapped.action_space}")
             print(f"Wrapped action space: {env.action_space}")
             print("\nActivated {} environment(s)".format(num_envs))
@@ -225,7 +225,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                     no_vec=True,
                     use_subprocess=False
                 )
-                env = custom_wrappers.DiscreteTransferActionWrapper(env)
+                env = custom_wrappers.DiscreteTransferWrapper(env)
                 mean_reward, std_reward = evaluate_policy(
                     model=agent,
                     env=env,

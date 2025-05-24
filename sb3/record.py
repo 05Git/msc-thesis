@@ -5,8 +5,9 @@ from diambra.arena import EnvironmentSettings, SpaceTypes, RecordingSettings, lo
 import argparse
 import yaml
 import custom_wrappers
+import time
 
-# diambra run python sb3/record.py --gameID _ --settingsCfg config_files/transfer-cfg-settings.yaml --use_controller/--no-use_controller
+# diambra run -g python sb3/record.py --gameID _ --settingsCfg config_files/transfer-cfg-settings.yaml --use_controller/--no-use_controller
 
 def main(game_id: str, settings_cfg: str, use_controller: bool):
     # Settings
@@ -16,7 +17,7 @@ def main(game_id: str, settings_cfg: str, use_controller: bool):
 
     # Load shared settings
     settings = settings_params["settings"]["shared"]
-    settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
+    settings["action_space"] = SpaceTypes.MULTI_DISCRETE
     settings["step_ratio"] = 1
     game_settings = settings_params["settings"][game_id]
     game_settings["characters"] = game_settings["characters"][0]
@@ -33,21 +34,21 @@ def main(game_id: str, settings_cfg: str, use_controller: bool):
         recording_settings.dataset_path = os.path.join(base_path, "recordings/random/episode_recording", game_id)
 
     env = diambra.arena.make(game_id, settings, episode_recording_settings=recording_settings, render_mode="human")
-    if settings.action_space == SpaceTypes.DISCRETE:
-        env = custom_wrappers.DiscreteTransferActionWrapper(env)
-    else:
-        env = custom_wrappers.MDTransferActionWrapper(env)
+    # if settings.action_space == SpaceTypes.DISCRETE:
+    #     env = custom_wrappers.DiscreteTransferWrapper(env)
+    # else:
+    #     env = custom_wrappers.MDTransferWrapper(env)
 
     if use_controller:
         # Controller initialization
         controller = get_diambra_controller(env.get_actions_tuples())
         controller.start()
 
-    observation, info = env.reset(seed=0)
+    observation, info = env.reset(seed=42)
 
     # Player-Environment interaction loop
     while True:
-        env.render()
+        # env.render()
         if use_controller:
             actions = controller.get_actions()
         else:
@@ -58,6 +59,7 @@ def main(game_id: str, settings_cfg: str, use_controller: bool):
         if done:
             observation, info = env.reset()
             break
+        time.sleep(1e-2)
 
     if use_controller:
         controller.stop()

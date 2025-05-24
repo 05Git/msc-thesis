@@ -12,7 +12,7 @@ from ray.tune.logger import pretty_print
 
 import torch
 # import custom_wrappers
-import utils
+import sb3.utils as utils
 
 def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
     # Game IDs
