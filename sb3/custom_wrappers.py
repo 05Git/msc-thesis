@@ -90,18 +90,18 @@ class MDTransferWrapper(gym.Wrapper):
             self.image_space_keys = ["frame"]
 
     def reset(self, **kwargs):
-        obs = self.env.reset(**kwargs)
-        return obs["frame"]
+        obs, info = self.env.reset(**kwargs)
+        return obs["frame"], info
 
     def step(self, action):
         '''
         Checks if a chosen action is within the underlying env's valid move list.
         If not, replaces it with no-op.
         '''
-        move_idx, attack_idx = action[0]
+        move_idx, attack_idx = action
         move = move_idx if move_idx < self.valid_moves else self.no_move_idx
         attack = attack_idx if attack_idx < self.valid_attacks else self.no_attack_idx
-        step_result = self.env.step([[move, attack]])
+        step_result = self.env.step([move, attack])
         # Unpack the step result depending on the API.
         if len(step_result) == 4:
             obs, reward, done, info = step_result

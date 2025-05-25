@@ -4,6 +4,8 @@ import json
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
+from pathlib import Path
 
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
@@ -12,40 +14,79 @@ from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import VecTransposeImage
 
-import tempfile
 from diambra.arena.utils.diambra_data_loader import DiambraDataLoader
 from imitation.data.types import TrajectoryWithRew
 from imitation.algorithms import bc
 from imitation.data import rollout
-# from imitation.algorithms.dagger import SimpleDAggerTrainer
+from imitation.util import logger as imit_logger
 
 import custom_wrappers
-import sb3.utils as utils
+import utils
 
-# diambra run -s 8 python sb3/train_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer _
+# diambra run -s 8 python sb3/imitation_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --datasetPath _ --trainID _ --charTransfer _
 
-def get_trajectory(datasets: list):
+class BCLossMonitor:
+    def __init__(self, bc_trainer, patience=5, min_delta=1e-4):
+        self.bc_trainer = bc_trainer
+        self.patience = patience
+        self.min_delta = min_delta
+
+        self.losses = []
+        self.best_loss = float('inf')
+        self.counter = 0
+        self.should_stop = False
+
+    def __call__(self):
+        current_loss = self.bc_trainer._last_batch_loss.item()
+        self.losses.append(current_loss)
+
+        if current_loss < self.best_loss - self.min_delta:
+            self.best_loss = current_loss
+            self.counter = 0
+        else:
+            self.counter += 1
+
+        if self.counter >= self.patience:
+            print(f"Early stopping: loss hasn't improved in {self.patience} batches.")
+            self.should_stop = True
+
+def get_transitions(data_loader: DiambraDataLoader):
+    n_episodes = len(data_loader.episode_files) # Number of datasets
     trajectories = []
-    for dataset in datasets:
-        obs = np.array([data["obs"] for data in dataset.episode_data])
-        obs = np.concatenate([obs, [np.zeros_like(dataset.episode_data[-1]["obs"])]], axis=0) # obs expected to be one entry longer than other arrays
-        acts = np.array([data["action"] for data in dataset.episode_data])
-        rews = np.array([data["reward"] for data in dataset.episode_data], dtype=np.float16)
-        dones = np.array([data["terminated"] or data["truncated"] for data in dataset.episode_data])
-        infos = np.array([data["info"] for data in dataset.episode_data])
+    for i in range(n_episodes):
+        _ = data_loader.reset() # Load next episode data
+        obs = np.array([
+            cv2.imdecode( # Decode frames to correct shape
+                np.frombuffer(
+                    data["obs"]["frame"], dtype=np.uint8 # Read frame data for each step in the episode
+                ),
+                cv2.IMREAD_UNCHANGED,
+            )
+            for data in data_loader.episode_data
+        ])
+        obs = np.stack([obs[i:i+4] for i in range(len(obs) - 3)], axis=0) # Stack frames together, this is what the policy expects as input
+        last_frame_stack = np.stack([obs[-1]] * 4)
+        obs = np.concatenate([obs, last_frame_stack], axis=0) # Concat 4 extra frame stacks to match trajectory's required shape
+        acts = np.array([data["action"] for data in data_loader.episode_data], dtype=np.uint8)
+        rews = np.array([data["reward"] for data in data_loader.episode_data], dtype=np.float16)
+        dones = np.array([data["terminated"] for data in data_loader.episode_data])
+        terminal = np.any([done == True for done in dones]) # Does this episode end in a terminal state?
+        infos = np.array([data["info"] for data in data_loader.episode_data])
 
         trajectories.append(TrajectoryWithRew(
             obs=obs,
             acts=acts,
             rews=rews,
-            terminal=dones,
+            terminal=terminal,
             infos=infos
         ))
-
+        print(f"Trajectory {i + 1} loaded")
+    
     return rollout.flatten_trajectories_with_rew(trajectories)
 
-def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
+def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: str | None, char_transfer: bool):
     # Game IDs
     game_ids = [
         "sfiii3n",
@@ -56,6 +97,12 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     
     if train_id not in game_ids:
         train_id = None
+
+    if dataset_path_input is not None:
+        dataset_path = dataset_path_input
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        dataset_path = os.path.join(base_path, "dataset")
 
     # Device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -83,6 +130,11 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
         "tb"
     )
     os.makedirs(model_folder, exist_ok=True)
+
+
+    # Set up imitation transitions
+    imitation_data_loader = DiambraDataLoader(dataset_path)
+    transitions = get_transitions(imitation_data_loader)
 
 
     # PPO settings
@@ -156,9 +208,11 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             epoch_settings = envs_settings[epoch]
             env, num_envs = make_sb3_env(epoch_settings.game_id, epoch_settings, wrappers_settings, seed=seed)
             if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                env = custom_wrappers.VecEnvDiscreteTransferActionWrapper(env)
+                env = custom_wrappers.VecEnvDiscreteTransferWrapper(env)
             else:
-                env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
+                env = custom_wrappers.VecEnvMDTransferWrapper(env)
+            env = VecTransposeImage(env)
+            
             print(f"\nOriginal action space: {env.unwrapped.action_space}")
             print(f"Wrapped action space: {env.action_space}")
             print("\nActivated {} environment(s)".format(num_envs))
@@ -214,6 +268,54 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             print("Policy architecture:")
             print(agent.policy)
 
+            # Evalluate before BC training
+            mean_reward_before, std_reward_before = evaluate_policy(
+                model=agent,
+                env=env,
+                n_eval_episodes=n_eval_episodes,
+                deterministic=True,
+                render=False,
+            )
+
+            # Set new logger
+            log_path = os.path.join(model_folder, f"seed_{seed}", "imit_log")
+            imit_log = imit_logger.configure(log_path, ["stdout", "csv", "tensorboard"])
+
+            # Train behavioural clone trainer on transitions
+            bc_trainer = bc.BC(
+                observation_space=env.observation_space,
+                action_space=env.action_space,
+                demonstrations=transitions,
+                rng=np.random.default_rng(seed=seed),
+                policy=agent.policy,
+                device=device,
+                custom_logger=imit_log,
+            )
+
+            # Start imitation training
+            imitation_settings = policy_params["imitation_settings"]
+            max_imitation_epochs = imitation_settings["max_train_epochs"]
+            bc_trainer.train(n_epochs=max_imitation_epochs, progress_bar=True)
+
+            # Save BC policy
+            imitation_folder = os.path.join(model_folder, f"seed_{seed}", "bc_trainer")
+            agent.policy = bc_trainer.policy
+            agent.save(os.path.join(imitation_folder, "agent_policy"))
+
+            # Eval imitation agent
+            mean_reward_after, std_reward_after = evaluate_policy(
+                model=agent,
+                env=env,
+                n_eval_episodes=n_eval_episodes,
+                deterministic=True,
+                render=False,
+            )
+
+            print(f"Mean reward of BC agent before training: {mean_reward_before}")
+            print(f"Std of Reward: {std_reward_before}")
+            print(f"Mean reward of BC agent after training: {mean_reward_after}")
+            print(f"Std of Reward: {std_reward_after}")
+
             # Create the callback: autosave every few steps
             auto_save_callback = AutoSave(
                 check_freq=autosave_freq,
@@ -245,15 +347,15 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             for eval_settings in eval_envs:
                 env, num_envs = make_sb3_env(eval_settings.game_id, eval_settings, wrappers_settings, seed=seed)
                 if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                    env = custom_wrappers.VecEnvDiscreteTransferActionWrapper(env)
+                    env = custom_wrappers.VecEnvDiscreteTransferWrapper(env)
                 else:
-                    env = custom_wrappers.VecEnvMDTransferActionWrapper(env)
+                    env = custom_wrappers.VecEnvMDTransferWrapper(env)
                 mean_reward, std_reward = evaluate_policy(
                     model=agent,
                     env=env,
                     n_eval_episodes=n_eval_episodes,
                     deterministic=True,
-                    render=True
+                    render=False,
                 )
                 env.close()
                 mean_rwd_results.append(mean_reward)
@@ -308,16 +410,16 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     else:
         plt.xlabel("Number of Games")
     plt.show()
-
-    # Return success
+    
     return 0
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--policyCfg", type=str, required=True, help="Policy config")
     parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
+    parser.add_argument("--datasetPath", type=str, required=True, help="Path to imitation datasets")
     parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on")
     parser.add_argument('--charTransfer', type=int, required=True, help="Evaluate character transfer or not")
     opt = parser.parse_args()
 
-    main(opt.policyCfg, opt.settingsCfg, opt.trainID, bool(opt.charTransfer))
+    main(opt.policyCfg, opt.settingsCfg, opt.datasetPath, opt.trainID, bool(opt.charTransfer))

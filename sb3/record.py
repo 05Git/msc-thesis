@@ -1,15 +1,16 @@
-import diambra.arena
 import os
 from diambra.arena.utils.controller import get_diambra_controller
-from diambra.arena import EnvironmentSettings, SpaceTypes, RecordingSettings, load_settings_flat_dict
+from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings, RecordingSettings
+from diambra.arena import SpaceTypes, load_settings_flat_dict
+from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 import argparse
 import yaml
 import custom_wrappers
 import time
 
-# diambra run -g python sb3/record.py --gameID _ --settingsCfg config_files/transfer-cfg-settings.yaml --use_controller/--no-use_controller
+# diambra run -g python sb3/record.py --gameID _ --settingsCfg config_files/transfer-cfg-settings.yaml --use_controller/--no-use_controller --numEpisodesToRecord _
 
-def main(game_id: str, settings_cfg: str, use_controller: bool):
+def main(game_id: str, settings_cfg: str, use_controller: bool, num_episodes_to_record: int):
     # Settings
     settings_file = open(settings_cfg)
     settings_params = yaml.load(settings_file, Loader=yaml.FullLoader)
@@ -23,6 +24,13 @@ def main(game_id: str, settings_cfg: str, use_controller: bool):
     game_settings["characters"] = game_settings["characters"][0]
     settings.update(game_settings)
     settings = load_settings_flat_dict(EnvironmentSettings, settings)
+    wrappers_settings = settings_params["wrappers_settings"]
+    wrappers_settings["flatten"] = True
+    wrappers_settings = load_settings_flat_dict(WrappersSettings, wrappers_settings)
+
+    # Set up seeds
+    seeds = list(range(0, 10000))
+    seed_idx = 0
 
     # Recording settings
     base_path = os.path.dirname(os.path.abspath(__file__))
@@ -33,37 +41,52 @@ def main(game_id: str, settings_cfg: str, use_controller: bool):
     else:
         recording_settings.dataset_path = os.path.join(base_path, "recordings/random/episode_recording", game_id)
 
-    env = diambra.arena.make(game_id, settings, episode_recording_settings=recording_settings, render_mode="human")
-    # if settings.action_space == SpaceTypes.DISCRETE:
-    #     env = custom_wrappers.DiscreteTransferWrapper(env)
-    # else:
-    #     env = custom_wrappers.MDTransferWrapper(env)
+    for _ in range(num_episodes_to_record):
+        seed = seeds[seed_idx]
+        env, _ = make_sb3_env(
+            settings.game_id,
+            env_settings=settings,
+            wrappers_settings=wrappers_settings,
+            episode_recording_settings=recording_settings,
+            render_mode="human",
+            seed=seed,
+            no_vec=True,
+        )
+        env = custom_wrappers.MDTransferWrapper(env)
+        # env = VecTransposeImage(DummyVecEnv([lambda: env]))
 
-    if use_controller:
-        # Controller initialization
-        controller = get_diambra_controller(env.get_actions_tuples())
-        controller.start()
-
-    observation, info = env.reset(seed=42)
-
-    # Player-Environment interaction loop
-    while True:
-        # env.render()
         if use_controller:
-            actions = controller.get_actions()
-        else:
-            actions = env.action_space.sample()
-        observation, reward, terminated, truncated, info = env.step(actions)
-        done = terminated or truncated
-        # Episode end (Done condition) check
-        if done:
-            observation, info = env.reset()
-            break
-        time.sleep(1e-2)
+            # Controller initialization
+            controller = get_diambra_controller(env.get_actions_tuples())
+            controller.start()
 
-    if use_controller:
-        controller.stop()
-    env.close()
+        observation, info = env.reset()
+
+        # Player-Environment interaction loop
+        while True:
+            # env.render()
+            if use_controller:
+                actions = controller.get_actions()
+            else:
+                actions = env.action_space.sample()
+            move, attack = actions
+            observation, reward, terminated, truncated, info = env.step(actions)
+            done = terminated or truncated
+            # Episode end (Done condition) check
+            if done:
+                observation, info = env.reset()
+                break
+            if use_controller:
+                time.sleep(1e-2)
+
+        if use_controller:
+            controller.stop()
+
+        env.close()
+
+        seed_idx += 1
+        if seed_idx > len(seeds) - 1:
+            seed_idx = 0 # Just in case we record more than 10000 episodes
 
     return 0
 
@@ -71,8 +94,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--gameID", type=str, required=False, help="Specific game to record for")
     parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
+    parser.add_argument("--numEpisodesToRecord", type=int, required=False, help="Env seed")
     parser.add_argument('--use_controller', action=argparse.BooleanOptionalAction, required=True, help='Flag to activate use of controller')
     opt = parser.parse_args()
-    print(opt)
 
-    main(opt.gameID, opt.settingsCfg, opt.use_controller)
+    if not opt.numEpisodesToRecord:
+        num_episodes_to_record = 1
+    else:
+        num_episodes_to_record = opt.numEpisodesToRecord
+
+    main(opt.gameID, opt.settingsCfg, opt.use_controller, num_episodes_to_record)

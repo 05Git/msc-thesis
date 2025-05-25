@@ -9,7 +9,6 @@ from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, Environme
 from stable_baselines3 import PPO, DQN
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
-
 import custom_wrappers
 import utils
 
@@ -74,9 +73,19 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     policy_kwargs = policy_params["policy_kwargs"]
     if not policy_kwargs:
         policy_kwargs = {}
-
+    # agent = PPO(
+    #     policy_params["ppo_settings"]["policy_type"],
+    #     env,
+    #     policy_kwargs=policy_kwargs,
+    #     device=device,
+    #     seed=seed
+    # )
+    # agent.policy = agent.policy.load(
+    #     "/home/oscar/github/msc-thesis/sb3/ppo_agents/bc_imitation_test/model/seed_0/bc_policy",
+    #     weights_only=False
+    # )
     # agent = PPO.load(
-    #     r"/sb3/transfer_agents/test_ppo_agent_cnn/model/seed_0/0_autosave_6000000",
+    #     "/home/oscar/github/msc-thesis/sb3/ppo_agents/bc_imitation_human/model/seed_0/bc_trainer/agent_policy",
     #     env=env,
     #     device=device,
     #     policy_kwargs=policy_kwargs,
@@ -99,7 +108,6 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
             "observation_space" : env.observation_space,
         }
     )
-    print("agent loaded")
     # agent = DQN.load(
     #     r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\transfer_agents\test_dqn_agent_cnn_2\model\seed_0\0_autosave_100000",
     #     env=env,
@@ -140,7 +148,8 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
         deterministic=True,
         render=False
     )
-    print ("evaluated")
+    print(f"Mean Reward: {mean_reward}")
+    print(f"Std of Reward: {std_reward}")
 
     env.close()
 
