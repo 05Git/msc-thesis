@@ -6,17 +6,13 @@ import torch
 import numpy as np
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
-from stable_baselines3 import PPO, DQN
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 import custom_wrappers
 import utils
 
-# PPO
-# diambra run -g python sb3/play.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
-
-# DQN
-# diambra run -g python sb3/play.py --policyCfg config_files/transfer-cfg-dqn.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
+# diambra run -g python sb3/play_recurrent_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
 
 def main(policy_cfg: str, settings_cfg: str, game_id: str):
     # Device
@@ -41,7 +37,7 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     )
 
     # Load wrappers settings as dictionary
-    stack_frames = settings_params["wrappers_settings"]["stack_frames"] = 4
+    stack_frames = settings_params["wrappers_settings"]["stack_frames"]
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
     # Load shared settings
     settings = settings_params["settings"]["shared"]
@@ -74,19 +70,13 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     policy_kwargs = policy_params["policy_kwargs"]
     if not policy_kwargs:
         policy_kwargs = {}
-    # agent = PPO(
-    #     policy_params["ppo_settings"]["policy_type"],
-    #     env,
-    #     policy_kwargs=policy_kwargs,
-    #     device=device,
-    #     seed=seed
-    # )
-    # agent.policy = agent.policy.load(
-    #     "/home/oscar/github/msc-thesis/sb3/ppo_agents/bc_imitation_test/model/seed_0/bc_policy",
-    #     weights_only=False
-    # )
-    agent = PPO.load(
-        "/home/oscar/github/msc-thesis/sb3/ppo_agents/bc_imitation_human_ft/model/seed_0/550000",
+    
+    agent = RecurrentPPO.load(
+        os.path.join(
+            model_folder,
+            f"seed_{seed}",
+            policy_params["ppo_settings"]["model_checkpoint"]
+        ),
         env=env,
         device=device,
         policy_kwargs=policy_kwargs,
@@ -95,75 +85,27 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
             "observation_space" : env.observation_space,
         }
     )
-    # agent = PPO.load(
-    #     os.path.join(
-    #         model_folder,
-    #         f"seed_{seed}",
-    #         policy_params["ppo_settings"]["model_checkpoint"]
-    #     ),
-    #     env=env,
-    #     device=device,
-    #     policy_kwargs=policy_kwargs,
-    #     custom_objects={
-    #         "action_space" : env.action_space,
-    #         "observation_space" : env.observation_space,
-    #     }
-    # )
-    # agent = DQN.load(
-    #     r"D:\University\Qmul 24-25\ECS750P MSc Thesis\Diambra\sb3\transfer_agents\test_dqn_agent_cnn_2\model\seed_0\0_autosave_100000",
-    #     env=env,
-    #     policy_kwargs=policy_kwargs,
-    #     device=device,
-    #     custom_objects={
-    #         "action_space" : env.action_space,
-    #         "observation_space" : env.observation_space,
-    #     }
-    # )
-    # agent = DQN.load(
-    #     os.path.join(
-    #         model_folder,
-    #         f"seed_{seed}",
-    #         policy_params["dqn_settings"]["model_checkpoint"]
-    #     ),
-    #     env=env,
-    #     policy_kwargs=policy_kwargs,
-    #     device=device,
-    #     custom_objects={
-    #         "action_space" : env.action_space,
-    #         "observation_space" : env.observation_space,
-    #     }
-    # )
 
-    # obs, _ = env.reset()
+    # obs = env.reset()
+    # lstm_states = None
+    # episode_starts = np.ones((num_envs,), dtype=bool)
     # while True:
-    #     action, _state = agent.predict(obs, deterministic=True)
-    #     if settings.action_space == SpaceTypes.DISCRETE:
-    #         action = int(action)
-    #     observation, reward, done, trunc, info = env.step(action)
-    #     if done or trunc:
+    #     action, lstm_states = agent.predict(obs, state=lstm_states, episode_start=episode_starts, deterministic=False)
+    #     print(f"Action: {action}")
+    #     obs, rew, dones, info = env.step(action)
+    #     episode_starts = dones
+    #     if dones:
     #         break
-    obs = env.reset()
-    while True:
-        action, _ = agent.predict(obs, deterministic=False)
-        # print(f"Action: {action}")
-        obs, rew, done, info = env.step(action)
-        # print(f"Observation: {obs}")
-        # print(f"Reward: {rew}")
-        # print(f"Dones: {dones}")
-        print(f"Info: {info}")
-        if done:
-            break
-    env.close()
-    return 0
+
     mean_reward, std_reward = evaluate_policy(
         model=agent,
         env=env,
-        n_eval_episodes=policy_params["ppo_settings"]["n_eval_episodes"],
-        deterministic=True,
+        n_eval_episodes=5,
+        deterministic=False,
         render=False
     )
-    print(f"Mean Reward: {mean_reward}")
-    print(f"Std of Reward: {std_reward}")
+    print(f"Mean reward: {mean_reward}")
+    print(f"Std of reward: {std_reward}")
 
     env.close()
 

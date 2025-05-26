@@ -7,14 +7,14 @@ class VecEnvMDTransferWrapper(VecEnvWrapper):
     VectorEnv Multi-Discrete Transfer Wrapper
     Necessary for wrapping SubprocVecEnvs during distributed training
     '''
-    def __init__(self, venv: VecEnv, no_move_idx: int = 0, no_attack_idx: int = 0):
+    def __init__(self, venv: VecEnv, stack_frames: int, no_move_idx: int = 0, no_attack_idx: int = 0):
         super().__init__(venv=venv)
         self.valid_moves = venv.action_space.nvec[0]
         self.valid_attacks = venv.action_space.nvec[1]
         self.action_space = gym.spaces.MultiDiscrete([9, 11]) # 11 attacks is the largest possible action space (kof)
         self.no_move_idx = no_move_idx
         self.no_attack_idx = no_attack_idx
-        self.observation_space = gym.spaces.Box(0, 255, (84, 84, 4), np.uint8)
+        self.observation_space = gym.spaces.Box(0, 255, (84, 84, stack_frames), np.uint8)
         if hasattr(venv, "image_space_keys"):
             self.image_space_keys = venv.unwrapped.image_space_keys
         else:
@@ -45,12 +45,12 @@ class VecEnvDiscreteTransferWrapper(VecEnvWrapper):
     VectorEnv Discrete Transfer Wrapper
     Necessary for wrapping SubprocVecEnvs during distributed training
     '''
-    def __init__(self, venv: VecEnv, no_op_idx: int = 0):
+    def __init__(self, venv: VecEnv, stack_frames: int, no_op_idx: int = 0):
         super().__init__(venv=venv)
         self.valid_actions = venv.action_space.n
         self.action_space = gym.spaces.Discrete(19) # 19 actions is the largest possible action space (kof)
         self.no_op_idx = no_op_idx
-        self.observation_space = gym.spaces.Box(0, 255, (84, 84, 4), np.uint8)
+        self.observation_space = gym.spaces.Box(0, 255, (84, 84, stack_frames), np.uint8)
         if hasattr(venv, "image_space_keys"):
             self.image_space_keys = venv.unwrapped.image_space_keys
         else:
@@ -76,14 +76,14 @@ class VecEnvDiscreteTransferWrapper(VecEnvWrapper):
         return obs["frame"], reward, done, info
 
 class MDTransferWrapper(gym.Wrapper):
-    def __init__(self, env, no_move_idx: int = 0, no_attack_idx: int = 0):
+    def __init__(self, env, stack_frames: int, no_move_idx: int = 0, no_attack_idx: int = 0):
         super().__init__(env)
         self.valid_moves = env.action_space.nvec[0]
         self.valid_attacks = env.action_space.nvec[1]
         self.action_space = gym.spaces.MultiDiscrete([9, 11]) # 11 actions is the largest possible action space (kof)
         self.no_move_idx = no_move_idx
         self.no_attack_idx = no_attack_idx
-        self.observation_space = gym.spaces.Box(0, 255, (84, 84, 4), np.uint8)
+        self.observation_space = gym.spaces.Box(0, 255, (84, 84, stack_frames), np.uint8)
         if hasattr(env, "image_space_keys"):
             self.image_space_keys = env.unwrapped.image_space_keys
         else:
@@ -111,12 +111,12 @@ class MDTransferWrapper(gym.Wrapper):
         return obs["frame"], reward, done, trunc, info
 
 class DiscreteTransferWrapper(gym.Wrapper):
-    def __init__(self, env, no_op_idx: int = 0):
+    def __init__(self, env, stack_frames: int, no_op_idx: int = 0):
         super().__init__(env)
         self.valid_actions = env.action_space.n
         self.action_space = gym.spaces.Discrete(19) # 19 actions is the largest possible action space (kof)
         self.no_op_idx = no_op_idx
-        self.observation_space = gym.spaces.Box(0, 255, (84, 84, 4), np.uint8)
+        self.observation_space = gym.spaces.Box(0, 255, (84, 84, stack_frames), np.uint8)
         if hasattr(env, "image_space_keys"):
             self.image_space_keys = env.unwrapped.image_space_keys
         else:
@@ -140,4 +140,3 @@ class DiscreteTransferWrapper(gym.Wrapper):
         else:
             obs, reward, done, trunc, info = step_result
         return obs["frame"], reward, done, trunc, info
-    

@@ -54,8 +54,6 @@ def main(dataset_path_input):
     print(f"Transitions acts shape: {transitions.acts.shape}")
     print(f"Transitions infos shape: {transitions.infos.shape}")
     print(f"Transitions rews shape: {transitions.rews.shape}")
-    
-    return 0
 
     i = 0
     max_i = 5
@@ -66,7 +64,7 @@ def main(dataset_path_input):
         # print("Reward: {}".format(reward))
         # print("Terminated: {}".format(terminated))
         # print("Truncated: {}".format(truncated))
-        # print("Info: {}".format(info))
+        print("Info: {}".format(info))
         data_loader.render()
         i += 1
 
