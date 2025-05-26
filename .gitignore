@@ -5,3 +5,5 @@
 *.zip
 /sb3/recordings/
 *.diambra
+*.pt
+*.pkl
