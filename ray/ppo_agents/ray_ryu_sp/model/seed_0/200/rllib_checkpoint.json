@@ -1,0 +1,1 @@
+{"type": "Algorithm", "checkpoint_version": "1.2", "format": "cloudpickle", "state_file": "/home/oscar/github/msc-thesis/ray/ppo_agents/ray_ryu_sp/model/seed_0/200/algorithm_state.pkl", "policy_ids": ["default_policy"], "ray_version": "2.7.2", "ray_commit": "82221fbf2c0e6304f981ce613e4297eb7535dd52"}
