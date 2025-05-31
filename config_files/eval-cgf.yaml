@@ -4,5 +4,5 @@ model_paths: [
   "sb3/ppo_agents/sf3_char_seq/model/seed_0/1500000.zip",
 ]
 
-eval_chars:
-  sfiii3n: [ "Ryu", "Ken", "Makoto" ]
+transfer_type: null # null / "character" / "game"
+eval_id: "sfiii3n"

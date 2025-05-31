@@ -23,13 +23,13 @@ settings:
 
   sfiii3n:
     game_id: "sfiii3n"
-    characters: !!python/tuple [ "Ryu", "Urien", "Makoto" ]
+    characters: [ "Ryu", "Urien", "Makoto" ]
     difficulty: 4
     super_art: 1
 
   kof98umh:
     game_id: "kof98umh"
-    characters: !!python/tuple [
+    characters: [
       !!python/tuple [ "Kyo", "Benimaru", "Daimon" ],
       !!python/tuple [ "Iori", "Billy", "Chang" ],
       !!python/tuple [ "Chin", "Clark", "Mai" ],
@@ -40,10 +40,10 @@ settings:
 
   umk3:
     game_id: "umk3"
-    characters: !!python/tuple [ "Liu Kang", "Kitana", "Shang Tsung" ]
+    characters: [ "Liu Kang", "Kitana", "Shang Tsung" ]
     difficulty: 2
 
   samsh5sp:
     game_id: "samsh5sp"
-    characters: !!python/tuple [ "Haohmaru", "Nakoruru", "Tamtam" ]
+    characters: [ "Haohmaru", "Nakoruru", "Tamtam" ]
     difficulty: 4
