@@ -1,6 +1,6 @@
 folders:
   parent_dir: "ppo_agents"
-  model_name: "sf3_ryu"
+  model_name: "testing_callbacks"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -16,9 +16,9 @@ ppo_settings:
   n_epochs: 10
   n_steps: 128
   autosave_freq: 200_000
-  eval_freq: 100
-  time_steps: 200
-  n_eval_episodes: 1  # Ensure a multiple of num_envs (num_envs * desired number of eval episodes)
+  eval_freq: 300
+  time_steps: 10_000
+  n_eval_episodes: 1
   seeds: !!python/tuple [ 0 ]
 
   gae_lambda: 0.95

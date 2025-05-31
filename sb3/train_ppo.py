@@ -11,7 +11,7 @@ from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, Environme
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
-from stable_baselines3.common.callbacks import CallbackList, EvalCallback
+from stable_baselines3.common.callbacks import CallbackList, EvalCallback, StopTrainingOnNoModelImprovement
 
 import custom_wrappers
 import custom_callbacks
@@ -125,45 +125,33 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             envs_settings.append(env_settings)
 
     eval_results = {}
-
-    train_env, eval_env = utils.make_sb3_envs(
-        game_id=envs_settings[0].game_id,
-        num_train_envs=num_train_envs,
-        num_eval_envs=num_eval_envs,
-        env_settings=envs_settings[0],
-        wrappers_settings=wrappers_settings, 
-        seed=0,
-        use_subprocess=True,
-    )
-
-    train_env.close()
-    eval_env.close()
-
-    return 0
-
-    for seed in [0,1,2,3]:
+    for seed in seeds:
         eval_results.update({seed: {}})
         utils.set_global_seed(seed)
         for epoch in range(len(envs_settings)):
             epoch_settings = envs_settings[epoch]
 
-            # Initialise env and wrap in transfer wrapper
-            env, num_envs = utils.make_env(
+            # Initialise envs and wrap in transfer wrappers
+            train_env, eval_env = utils.make_sb3_envs(
                 game_id=epoch_settings.game_id,
-                num_envs=num_train_envs,
+                num_train_envs=num_train_envs,
+                num_eval_envs=num_eval_envs,
                 env_settings=epoch_settings, 
                 wrappers_settings=wrappers_settings, 
                 seed=seed,
                 use_subprocess=True,
             )
             if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames)
+                train_env = custom_wrappers.VecEnvDiscreteTransferWrapper(train_env, stack_frames)
+                eval_env = custom_wrappers.VecEnvDiscreteTransferWrapper(eval_env, stack_frames)
             else:
-                env = custom_wrappers.VecEnvMDTransferWrapper(env, stack_frames)
-            env = VecTransposeImage(env)
-            print(f"\nOriginal action space: {env.unwrapped.action_space}")
-            print(f"Wrapped action space: {env.action_space}")
-            print("\nActivated {} environment(s)".format(env))
+                train_env = custom_wrappers.VecEnvMDTransferWrapper(train_env, stack_frames)
+                eval_env = custom_wrappers.VecEnvMDTransferWrapper(eval_env, stack_frames)
+            train_env = VecTransposeImage(train_env)
+            eval_env = VecTransposeImage(eval_env)
+            print(f"\nOriginal action space: {train_env.unwrapped.action_space}")
+            print(f"Wrapped action space: {train_env.action_space}")
+            print("\nActivated {} environment(s)".format(num_eval_envs + num_train_envs))
 
             # Load policy params if checkpoint exists, else make a new agent
             checkpoint_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
@@ -171,7 +159,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                 print("\n Checkpoint found, loading model.")
                 agent = PPO.load(
                     checkpoint_path,
-                    env=env,
+                    env=train_env,
                     gamma=gamma,
                     learning_rate=learning_rate,
                     clip_range=clip_range,
@@ -180,15 +168,15 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                     tensorboard_log=tensor_board_folder,
                     device=device,
                     custom_objects={
-                        "action_space" : env.action_space,
-                        "observation_space" : env.observation_space,
+                        "action_space" : train_env.action_space,
+                        "observation_space" : train_env.observation_space,
                     }
                 )
             else:
                 print("\nNo or invalid checkpoint given, creating new model")
                 agent = PPO(
                     policy,
-                    env,
+                    train_env,
                     verbose=1,
                     gamma=gamma,
                     batch_size=batch_size,
@@ -216,39 +204,24 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             print("Policy architecture:")
             print(agent.policy)
 
-            # Create callback list: autosave every few steps, track average number of stages and arcade runs completed
+            # Create callback list: track average number of stages and arcade runs completed, evaluate and autosave at regular intervals
             auto_save_callback = AutoSave(
                 check_freq=autosave_freq,
-                num_envs=num_envs,
+                num_envs=num_train_envs,
                 save_path=os.path.join(model_folder, f"seed_{seed}"),
                 filename_prefix=model_checkpoint + "_"
             )
             diambra_eval_callback = custom_callbacks.DiambraEvalCallback(verbose=0)
-
-            # Set up evaluation env for EvalCallback
-            eval_env, num_eval_envs = utils.make_env(
-                game_id=epoch_settings.game_id,
-                num_envs=num_eval_envs,
-                env_settings=epoch_settings, 
-                wrappers_settings=wrappers_settings,
-                seed=seed,
-                no_vec=False,
-                use_subprocess=True,
-            )
-            if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                eval_env = custom_wrappers.VecEnvDiscreteTransferWrapper(eval_env, stack_frames)
-            else:
-                eval_env = custom_wrappers.VecEnvMDTransferWrapper(eval_env, stack_frames)
-            eval_env = VecTransposeImage(eval_env)
-
+            stop_training = StopTrainingOnNoModelImprovement(max_no_improvement_evals=3, min_evals=5, verbose=1)
             eval_callback = EvalCallback(
                 eval_env=eval_env,
                 n_eval_episodes=n_eval_episodes * num_eval_envs, # Ensure each env completes required num of eval episodes
                 eval_freq=eval_freq,
-                log_path=None,
-                best_model_save_path=None,
+                log_path=os.path.join(model_folder, f"seed_{seed}"),
+                best_model_save_path=os.path.join(model_folder, f"seed_{seed}"),
                 deterministic=False,
                 render=False,
+                callback_after_eval=stop_training,
                 verbose=1,
             )
             callback_list = CallbackList([auto_save_callback, diambra_eval_callback, eval_callback])
@@ -267,8 +240,8 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
             del agent
 
-            env.close()
-            # eval_env.close()
+            train_env.close()
+            eval_env.close()
 
             # if not train_id or char_transfer:
             #     eval_envs = envs_settings[:epoch + 1]
@@ -403,12 +376,12 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policyCfg", type=str, required=True, help="Policy config", default="config_files/transfer-cgf-ppo.yaml")
-    parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
+    parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/transfer-cfg-ppo.yaml")
+    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
     parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default="sfiii3n")
-    parser.add_argument('--charTransfer', action=argparse.BooleanOptionalAction, required=True, help="Evaluate character transfer or not", default=False)
-    parser.add_argument('--numTrainEnvs', type=int, required=True, help="Number of training environments", default=8)
-    parser.add_argument('--numEvalEnvs', type=int, required=True, help="Number of evaluation environments", default=4)
+    parser.add_argument('--charTransfer', action=argparse.BooleanOptionalAction, required=False, help="Evaluate character transfer or not", default=False)
+    parser.add_argument('--numTrainEnvs', type=int, required=False, help="Number of training environments", default=8)
+    parser.add_argument('--numEvalEnvs', type=int, required=False, help="Number of evaluation environments", default=4)
     opt = parser.parse_args()
 
     main(
