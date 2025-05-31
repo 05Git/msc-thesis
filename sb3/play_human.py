@@ -9,6 +9,8 @@ def main():
     settings.characters = "Ryu"
     settings.step_ratio = 1
     settings.difficulty = 1
+    settings.super_art = 1
+    settings.continue_game = 0.
 
     # Environment creation
     env = diambra.arena.make("sfiii3n", env_settings=settings, render_mode="human")
@@ -38,9 +40,11 @@ def main():
             print(f"round_done: {info['round_done']}")
             print(f"stage_done: {info['stage_done']}")
             print(f"difficulty: {info['settings'].episode_settings.difficulty}")
+            print(f"Terminated: {terminated}")
+            print(f"Truncated: {truncated}")
             print("̣\n-------------")
 
-        time.sleep(1e-2)
+        time.sleep(6e-3)
 
         # Episode end (Done condition) check
         if terminated or truncated:

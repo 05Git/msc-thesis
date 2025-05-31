@@ -10,15 +10,16 @@ from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 from stable_baselines3 import PPO
-from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.vec_env import VecTransposeImage
+from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.callbacks import CallbackList, EvalCallback
 
 import custom_wrappers
+import custom_callbacks
 import utils
 
-# diambra run -g -s 8 python sb3/train_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --trainID _ --charTransfer _
+# diambra run -s 12 python sb3/train_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --no-charTransfer --numTrainEnvs 8 --numEvalEnvs 4 --trainID _
 
-def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool):
+def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer: bool, num_train_envs: int, num_eval_envs: int):
     # Game IDs
     game_ids = [
         "sfiii3n",
@@ -81,6 +82,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     target_kl = ppo_settings["target_kl"]
     time_steps = ppo_settings["time_steps"]
     autosave_freq = ppo_settings["autosave_freq"]
+    eval_freq = ppo_settings["eval_freq"]
     seeds = ppo_settings["seeds"]
 
     # Policy kwargs
@@ -90,6 +92,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
     # Load wrappers settings as dictionary
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
+    stack_frames = settings_params["wrappers_settings"]["stack_frames"]
     # Load shared settings
     settings = settings_params["settings"]["shared"]
     # Set action space type
@@ -122,19 +125,45 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             envs_settings.append(env_settings)
 
     eval_results = {}
-    for seed in seeds:
+
+    train_env, eval_env = utils.make_sb3_envs(
+        game_id=envs_settings[0].game_id,
+        num_train_envs=num_train_envs,
+        num_eval_envs=num_eval_envs,
+        env_settings=envs_settings[0],
+        wrappers_settings=wrappers_settings, 
+        seed=0,
+        use_subprocess=True,
+    )
+
+    train_env.close()
+    eval_env.close()
+
+    return 0
+
+    for seed in [0,1,2,3]:
         eval_results.update({seed: {}})
         utils.set_global_seed(seed)
         for epoch in range(len(envs_settings)):
             epoch_settings = envs_settings[epoch]
-            env, num_envs = make_sb3_env(epoch_settings.game_id, epoch_settings, wrappers_settings, seed=seed)
+
+            # Initialise env and wrap in transfer wrapper
+            env, num_envs = utils.make_env(
+                game_id=epoch_settings.game_id,
+                num_envs=num_train_envs,
+                env_settings=epoch_settings, 
+                wrappers_settings=wrappers_settings, 
+                seed=seed,
+                use_subprocess=True,
+            )
             if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                env = custom_wrappers.VecEnvDiscreteTransferWrapper(env)
+                env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames)
             else:
-                env = custom_wrappers.VecEnvMDTransferWrapper(env)
+                env = custom_wrappers.VecEnvMDTransferWrapper(env, stack_frames)
+            env = VecTransposeImage(env)
             print(f"\nOriginal action space: {env.unwrapped.action_space}")
             print(f"Wrapped action space: {env.action_space}")
-            print("\nActivated {} environment(s)".format(num_envs))
+            print("\nActivated {} environment(s)".format(env))
 
             # Load policy params if checkpoint exists, else make a new agent
             checkpoint_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
@@ -187,21 +216,49 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             print("Policy architecture:")
             print(agent.policy)
 
-            # Create the callback: autosave every few steps
+            # Create callback list: autosave every few steps, track average number of stages and arcade runs completed
             auto_save_callback = AutoSave(
                 check_freq=autosave_freq,
                 num_envs=num_envs,
                 save_path=os.path.join(model_folder, f"seed_{seed}"),
                 filename_prefix=model_checkpoint + "_"
             )
+            diambra_eval_callback = custom_callbacks.DiambraEvalCallback(verbose=0)
+
+            # Set up evaluation env for EvalCallback
+            eval_env, num_eval_envs = utils.make_env(
+                game_id=epoch_settings.game_id,
+                num_envs=num_eval_envs,
+                env_settings=epoch_settings, 
+                wrappers_settings=wrappers_settings,
+                seed=seed,
+                no_vec=False,
+                use_subprocess=True,
+            )
+            if epoch_settings.action_space == SpaceTypes.DISCRETE:
+                eval_env = custom_wrappers.VecEnvDiscreteTransferWrapper(eval_env, stack_frames)
+            else:
+                eval_env = custom_wrappers.VecEnvMDTransferWrapper(eval_env, stack_frames)
+            eval_env = VecTransposeImage(eval_env)
+
+            eval_callback = EvalCallback(
+                eval_env=eval_env,
+                n_eval_episodes=n_eval_episodes * num_eval_envs, # Ensure each env completes required num of eval episodes
+                eval_freq=eval_freq,
+                log_path=None,
+                best_model_save_path=None,
+                deterministic=False,
+                render=False,
+                verbose=1,
+            )
+            callback_list = CallbackList([auto_save_callback, diambra_eval_callback, eval_callback])
 
             agent.learn(
                 total_timesteps=time_steps,
-                callback=auto_save_callback,
-                reset_num_timesteps=False,
-                progress_bar=True
+                callback=callback_list,
+                reset_num_timesteps=True,
+                progress_bar=True,
             )
-            env.close()
 
             # Save the agent
             model_checkpoint = str(int(model_checkpoint) + time_steps)
@@ -210,103 +267,155 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
             del agent
 
-            if not train_id or char_transfer:
-                eval_envs = envs_settings[:epoch + 1]
-            else:
-                eval_envs = [epoch_settings]
+            env.close()
+            # eval_env.close()
 
-            mean_rwd_results = []
-            std_rwd_results = []
-            for eval_settings in eval_envs:
-                env, num_envs = make_sb3_env(eval_settings.game_id, eval_settings, wrappers_settings, seed=seed)
-                if eval_settings.action_space == SpaceTypes.DISCRETE:
-                    env = custom_wrappers.VecEnvDiscreteTransferWrapper(env)
-                else:
-                    env = custom_wrappers.VecEnvMDTransferWrapper(env)
-                env = VecTransposeImage(env)
-                agent = PPO.load(
-                    model_path,
-                    env=env,
-                    policy_kwargs=policy_kwargs,
-                    tensorboard_log=tensor_board_folder,
-                    device=device,
-                    custom_objects={
-                        "action_space" : env.action_space,
-                        "observation_space" : env.observation_space,
-                    }
-                )
+            # if not train_id or char_transfer:
+            #     eval_envs = envs_settings[:epoch + 1]
+            # else:
+            #     eval_envs = [epoch_settings]
 
-                mean_reward, std_reward = evaluate_policy(
-                    model=agent,
-                    env=env,
-                    n_eval_episodes=n_eval_episodes,
-                    deterministic=True,
-                    render=False
-                )
-                env.close()
-                del agent
-                mean_rwd_results.append(mean_reward)
-                std_rwd_results.append(std_reward)
+            # mean_rewards = np.zeros(len(eval_envs), dtype=np.float64)
+            # mean_stages = np.zeros(len(eval_envs), dtype=np.float64)
+            # mean_arcade_runs = np.zeros(len(eval_envs), dtype=np.float64)
+            # std_rewards = np.zeros(len(eval_envs), dtype=np.float64)
+            # std_stages = np.zeros(len(eval_envs), dtype=np.float64)
+            # std_arcade_runs = np.zeros(len(eval_envs), dtype=np.float64)
+            # for idx, eval_settings in enumerate(eval_envs):
+            #     env, num_envs = make_sb3_env(eval_settings.game_id, eval_settings, wrappers_settings, seed=seed)
+            #     if eval_settings.action_space == SpaceTypes.DISCRETE:
+            #         env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames)
+            #     else:
+            #         env = custom_wrappers.VecEnvMDTransferWrapper(env, stack_frames)
+            #     env = VecTransposeImage(env)
+            #     agent = PPO.load(
+            #         model_path,
+            #         env=env,
+            #         policy_kwargs=policy_kwargs,
+            #         tensorboard_log=tensor_board_folder,
+            #         device=device,
+            #         custom_objects={
+            #             "action_space" : env.action_space,
+            #             "observation_space" : env.observation_space,
+            #         }
+            #     )
 
-            mean_rwd = sum(mean_rwd_results) / len(mean_rwd_results)
-            std_rwd = sum(std_rwd_results) / len(std_rwd_results)
-            print("Evaluation Reward: {} (avg) ± {} (std)".format(mean_rwd, std_rwd))
-            eval_results[seed].update({
-                epoch: {
-                    "mean_rwd": mean_rwd,
-                    "std_rwd": std_rwd
-                }
-            })
+            #     rwd_info, stages_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
+            #         model=agent,
+            #         env=env,
+            #         n_eval_episodes=n_eval_episodes,
+            #         deterministic=False,
+            #         render=False,
+            #         return_episode_rewards=False,
+            #     )
+            #     env.close()
+            #     del agent
+                
+            #     # Store eval results
+            #     mean_rewards[idx], std_rewards[idx] = rwd_info
+            #     mean_stages[idx], std_stages[idx] = stages_info
+            #     mean_arcade_runs[idx], std_arcade_runs[idx] = arcade_info
+
+            # # Average out results across all eval envs
+            # mean_rwd, std_rwd = np.mean(mean_rewards), np.mean(std_rewards)
+            # mean_stages, std_stages = np.mean(mean_stages), np.mean(std_stages)
+            # mean_arcade_runs, std_arcade_runs = np.mean(mean_arcade_runs), np.mean(std_arcade_runs)
+
+            # # Print and save results for plotting later
+            # print("Evaluation Reward: {} (avg) ± {} (std)".format(mean_rwd, std_rwd))
+            # print("Evaluation Stages Completed: {} (avg) ± {} (std)".format(mean_stages, std_stages))
+            # print("Evaluation Arcade Runs Completed: {} (avg) ± {} (std)".format(mean_arcade_runs, std_arcade_runs))
+            # eval_results[seed].update({
+            #     epoch: {
+            #         "mean_rwd": mean_rwd,
+            #         "std_rwd": std_rwd,
+            #         "mean_stages": mean_stages,
+            #         "std_stages": std_stages,
+            #         "mean_arcade_runs": mean_arcade_runs,
+            #         "std_arcade_runs": std_arcade_runs,
+            #     }
+            # })
 
 
     # Save results
-    file_path = os.path.join(
-        base_path,
-        policy_params["folders"]["parent_dir"],
-        policy_params["folders"]["model_name"],
-        "model",
-        "evaluation_results.json"
-    )
-    with open(file_path, "w") as f:
-        json.dump(eval_results, f, indent=4)
+    # file_path = os.path.join(
+    #     base_path,
+    #     policy_params["folders"]["parent_dir"],
+    #     policy_params["folders"]["model_name"],
+    #     "model",
+    #     "evaluation_results.json"
+    # )
+    # with open(file_path, "w") as f:
+    #     json.dump(eval_results, f, indent=4)
 
 
-    print("-----------------------------")
-    print("-----Evaluation Results------")
-    print("-----------------------------")
-    print("----------See Plot-----------")
-    print("-----------------------------")
+    # print("-----------------------------")
+    # print("-----Evaluation Results------")
+    # print("-----------------------------")
+    # print("----------See Plots----------")
+    # print("-----------------------------")
 
-    x = np.linspace(1, len(envs_settings), num=len(envs_settings))
-    colours = ["r", "g", "b", "y", "m", "c", "k"]
-    for idx, seed in enumerate(seeds):
-        mean = [eval_results[seed][epoch]["mean_rwd"] for epoch in eval_results[seed]]
-        std = [eval_results[seed][epoch]["std_rwd"] for epoch in eval_results[seed]]
-        pos_std = [sum(y) for y in zip(mean, std)]
-        neg_std = [ya - yb for ya, yb in zip(mean, std)]
-        plt.plot(x, mean, color=colours[idx], label=f"Seed: {seed}")
-        plt.fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
-    plt.grid()
-    plt.legend()
-    plt.ylabel("Average Reward Across Evaluation Episodes")
-    if train_id:
-        if char_transfer:
-            plt.xlabel("Number of Characters")
-        else:
-            plt.xlabel("Training Episodes")
-    else:
-        plt.xlabel("Number of Games")
-    plt.show()
+    # x = np.linspace(1, len(envs_settings), num=len(envs_settings))
+    # colours = ["r", "g", "b", "y", "m", "c", "k"]
+    # fig, axs = plt.subplots(nrows=1, ncols=3, sharex=True, sharey=False)
+    # for idx, seed in enumerate(seeds):
+    #     mean_rwd = [eval_results[seed][epoch]["mean_rwd"] for epoch in eval_results[seed]]
+    #     std_rwd = [eval_results[seed][epoch]["std_rwd"] for epoch in eval_results[seed]]
+    #     pos_std = [sum(y) for y in zip(mean_rwd, std_rwd)]
+    #     neg_std = [ya - yb for ya, yb in zip(mean_rwd, std_rwd)]
+    #     axs[0].plot(x, mean_rwd, color=colours[idx], label=f"Seed: {seed}")
+    #     axs[0].fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
 
-    # Return success
+    #     mean_stages = [eval_results[seed][epoch]["mean_stages"] for epoch in eval_results[seed]]
+    #     std_stages = [eval_results[seed][epoch]["std_stages"] for epoch in eval_results[seed]]
+    #     pos_std = [sum(y) for y in zip(mean_stages, std_stages)]
+    #     neg_std = [ya - yb for ya, yb in zip(mean_stages, std_stages)]
+    #     axs[1].plot(x, mean_stages, color=colours[idx], label=f"Seed: {seed}")
+    #     axs[1].fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
+
+    #     mean_arcade_runs = [eval_results[seed][epoch]["mean_arcade_runs"] for epoch in eval_results[seed]]
+    #     std_arcade_runs = [eval_results[seed][epoch]["std_arcade_runs"] for epoch in eval_results[seed]]
+    #     pos_std = [sum(y) for y in zip(mean_arcade_runs, std_arcade_runs)]
+    #     neg_std = [ya - yb for ya, yb in zip(mean_arcade_runs, std_arcade_runs)]
+    #     axs[2].plot(x, mean_arcade_runs, color=colours[idx], label=f"Seed: {seed}")
+    #     axs[2].fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
+
+    # axs[0].set_ylabel("Average Reward Across Evaluation Episodes")
+    # axs[1].set_ylabel("Average No. of Stages Completed Across Evaluation Episodes")
+    # axs[2].set_ylabel("Average No. of Successful Arcade Runs Across Evaluation Episodes")
+    # if train_id:
+    #     if char_transfer:
+    #         x_label = "Number of Characters"
+    #     else:
+    #         x_label = "Training Episodes"
+    # else:
+    #     x_label = "Number of Games"
+
+    # for ax in axs:
+    #     ax.set_xlabel(x_label)
+    #     ax.grid(True)
+    #     ax.legend()
+
+    # plt.savefig("eval_results.png")
+    # plt.show()
+
     return 0
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policyCfg", type=str, required=True, help="Policy config")
-    parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
-    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on")
-    parser.add_argument('--charTransfer', type=int, required=True, help="Evaluate character transfer or not")
+    parser.add_argument("--policyCfg", type=str, required=True, help="Policy config", default="config_files/transfer-cgf-ppo.yaml")
+    parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
+    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default="sfiii3n")
+    parser.add_argument('--charTransfer', action=argparse.BooleanOptionalAction, required=True, help="Evaluate character transfer or not", default=False)
+    parser.add_argument('--numTrainEnvs', type=int, required=True, help="Number of training environments", default=8)
+    parser.add_argument('--numEvalEnvs', type=int, required=True, help="Number of evaluation environments", default=4)
     opt = parser.parse_args()
 
-    main(opt.policyCfg, opt.settingsCfg, opt.trainID, bool(opt.charTransfer))
+    main(
+        policy_cfg=opt.policyCfg, 
+        settings_cfg=opt.settingsCfg, 
+        train_id=opt.trainID, 
+        char_transfer=opt.charTransfer, 
+        num_train_envs=opt.numTrainEnvs,
+        num_eval_envs=opt.numEvalEnvs,
+    )

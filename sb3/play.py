@@ -150,7 +150,7 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
         # print(f"Observation: {obs}")
         # print(f"Reward: {rew}")
         # print(f"Dones: {dones}")
-        print(f"Info: {info}")
+        # print(f"Info: {info}")
         if done:
             break
     env.close()

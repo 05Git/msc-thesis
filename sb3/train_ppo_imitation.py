@@ -14,6 +14,7 @@ import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import VecTransposeImage
+from stable_baselines3.common.callbacks import CallbackList
 
 from diambra.arena.utils.diambra_data_loader import DiambraDataLoader
 from imitation.data.types import TrajectoryWithRew
@@ -22,6 +23,7 @@ from imitation.data import rollout
 from imitation.util import logger as imit_logger
 
 import custom_wrappers
+import custom_callbacks
 import utils
 
 # diambra run -s 8 python sb3/imitation_ppo.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --datasetPath _ --trainID _ --charTransfer _
@@ -272,7 +274,7 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
                 model=agent,
                 env=env,
                 n_eval_episodes=n_eval_episodes,
-                deterministic=True,
+                deterministic=False,
                 render=False,
             )
 
@@ -306,7 +308,7 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
                 model=agent,
                 env=env,
                 n_eval_episodes=n_eval_episodes,
-                deterministic=True,
+                deterministic=False,
                 render=False,
             )
 
@@ -322,12 +324,14 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
                 save_path=os.path.join(model_folder, f"seed_{seed}"),
                 filename_prefix=model_checkpoint + "_"
             )
+            eval_callback = custom_callbacks.DiambraEvalCallback(verbose=0)
+            callback_list = CallbackList([auto_save_callback, eval_callback])
 
             agent.learn(
                 total_timesteps=time_steps,
-                callback=auto_save_callback,
+                callback=callback_list,
                 reset_num_timesteps=False,
-                progress_bar=True
+                progress_bar=True,
             )
             env.close()
 
@@ -349,14 +353,18 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
                     env = custom_wrappers.VecEnvDiscreteTransferWrapper(env)
                 else:
                     env = custom_wrappers.VecEnvMDTransferWrapper(env)
+                env = VecTransposeImage(env)
+
                 mean_reward, std_reward = evaluate_policy(
                     model=agent,
                     env=env,
                     n_eval_episodes=n_eval_episodes,
-                    deterministic=True,
+                    deterministic=False,
                     render=False,
                 )
+
                 env.close()
+
                 mean_rwd_results.append(mean_reward)
                 std_rwd_results.append(std_reward)
 

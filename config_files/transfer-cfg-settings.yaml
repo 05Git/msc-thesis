@@ -1,6 +1,6 @@
 wrappers_settings:
   normalize_reward: true
-  normalization_factor: 1
+  normalization_factor: 1.
   no_attack_buttons_combinations: false
   stack_frames: 4
   dilation: 1
@@ -23,7 +23,7 @@ settings:
 
   sfiii3n:
     game_id: "sfiii3n"
-    characters: !!python/tuple [ "Ryu", "Ken", "Makoto", "Hugo", "Urien" ]
+    characters: !!python/tuple [ "Ryu", "Urien", "Makoto" ]
     difficulty: 4
     super_art: 1
 
@@ -40,10 +40,10 @@ settings:
 
   umk3:
     game_id: "umk3"
-    characters: !!python/tuple [ "Liu Kang", "Kitana", "Shang Tsung", "Nightwolf", "Jax" ]
-    difficulty: 3
+    characters: !!python/tuple [ "Liu Kang", "Kitana", "Shang Tsung" ]
+    difficulty: 2
 
   samsh5sp:
     game_id: "samsh5sp"
-    characters: !!python/tuple [ "Haohmaru", "Galford", "Nakoruru", "Tamtam", "Kusare" ]
+    characters: !!python/tuple [ "Haohmaru", "Nakoruru", "Tamtam" ]
     difficulty: 4

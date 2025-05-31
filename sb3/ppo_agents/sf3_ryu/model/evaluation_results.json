@@ -1,0 +1,20 @@
+{
+    "0": {
+        "0": {
+            "mean_rwd": 0.8680125000000001,
+            "std_rwd": 0.5937508270204767,
+            "mean_stages": 1.875,
+            "std_stages": 0.7806247497997998,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        },
+        "1": {
+            "mean_rwd": 0.39130425,
+            "std_rwd": 0.8606231105679022,
+            "mean_stages": 1.375,
+            "std_stages": 1.1303840936428744,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        }
+    }
+}

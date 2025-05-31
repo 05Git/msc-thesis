@@ -1,0 +1,8 @@
+model_paths: [
+  "sb3/ppo_agents/sf3_char_seq/model/seed_0/500000.zip",
+  "sb3/ppo_agents/sf3_char_seq/model/seed_0/1000000.zip",
+  "sb3/ppo_agents/sf3_char_seq/model/seed_0/1500000.zip",
+]
+
+eval_chars:
+  sfiii3n: [ "Ryu", "Ken", "Makoto" ]

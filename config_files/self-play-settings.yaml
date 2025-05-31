@@ -1,6 +1,6 @@
 wrappers_settings:
   normalize_reward: true
-  normalization_factor: 0.5
+  normalization_factor: 1.
   no_attack_buttons_combinations: false
   stack_frames: 4
   dilation: 1
