@@ -24,7 +24,7 @@ settings:
   sfiii3n:
     game_id: "sfiii3n"
     characters: [ "Ryu", "Urien", "Makoto" ]
-    difficulty: 4
+    difficulty: 1
     super_art: 1
 
   kof98umh:
@@ -34,16 +34,17 @@ settings:
       !!python/tuple [ "Iori", "Billy", "Chang" ],
       !!python/tuple [ "Chin", "Clark", "Mai" ],
     ]
-    difficulty: 4
+    difficulty: 1
     fighting_style: 1
     ultimate_style: !!python/tuple [ 1, 1, 1 ]
 
   umk3:
     game_id: "umk3"
     characters: [ "Liu Kang", "Kitana", "Shang Tsung" ]
-    difficulty: 2
+    difficulty: 1
+    tower: 1
 
   samsh5sp:
     game_id: "samsh5sp"
     characters: [ "Haohmaru", "Nakoruru", "Tamtam" ]
-    difficulty: 4
+    difficulty: 1

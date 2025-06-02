@@ -82,7 +82,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     target_kl = ppo_settings["target_kl"]
     time_steps = ppo_settings["time_steps"]
     autosave_freq = ppo_settings["autosave_freq"]
-    eval_freq = ppo_settings["eval_freq"] // num_train_envs # Calculations
+    eval_freq = ppo_settings["eval_freq"]
     seeds = ppo_settings["seeds"]
 
     # Policy kwargs
@@ -214,10 +214,10 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             eval_callback = EvalCallback(
                 eval_env=eval_env,
                 n_eval_episodes=n_eval_episodes * num_eval_envs, # Ensure each env completes required num of eval episodes
-                eval_freq=eval_freq,
+                eval_freq=eval_freq // num_train_envs,
                 log_path=os.path.join(model_folder, f"seed_{seed}"),
                 best_model_save_path=os.path.join(model_folder, f"seed_{seed}"),
-                deterministic=False,
+                deterministic=True,
                 render=False,
                 callback_after_eval=stop_training,
                 verbose=1,

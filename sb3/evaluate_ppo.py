@@ -16,9 +16,10 @@ import custom_wrappers
 import custom_callbacks
 import utils
 
-# diambra run -s 8 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py
+# diambra run -s 8 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py --no-deterministic
 
-def main(policy_cfg: str, settings_cfg: str, eval_cfg: str):# Game IDs
+def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool):
+    # Game IDs
     game_ids = [
         "sfiii3n",
         "kof98umh",
@@ -137,8 +138,8 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str):# Game IDs
                     rwd_info, stages_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
                         model=agent,
                         env=env,
-                        n_eval_episodes=n_eval_episodes,
-                        deterministic=False,
+                        n_eval_episodes=n_eval_episodes * num_envs,
+                        deterministic=deterministic,
                         render=False,
                     )
                     env.close()
@@ -198,8 +199,8 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str):# Game IDs
                     rwd_info, stages_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
                         model=agent,
                         env=env,
-                        n_eval_episodes=n_eval_episodes,
-                        deterministic=False,
+                        n_eval_episodes=n_eval_episodes * num_envs,
+                        deterministic=deterministic,
                         render=False,
                     )
                     env.close()
@@ -252,7 +253,7 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str):# Game IDs
                     model=agent,
                     env=env,
                     n_eval_episodes=n_eval_episodes * num_envs,
-                    deterministic=False,
+                    deterministic=deterministic,
                     render=False,
                 )
                 mean_reward, std_reward = reward_info
@@ -269,23 +270,6 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str):# Game IDs
                     }
                 })
             env.close()
-
-        
-
-            # Print and save results for plotting later
-            print("Evaluation Reward: {} (avg) ± {} (std)".format(mean_rewards, std_rewards))
-            print("Evaluation Stages Completed: {} (avg) ± {} (std)".format(mean_stages, std_stages))
-            print("Evaluation Arcade Runs Completed: {} (avg) ± {} (std)".format(mean_arcade_runs, std_arcade_runs))
-            eval_results[seed].update({
-                f"Characters: {idx_1 + 1}": {
-                    "mean_rwd": mean_rewards,
-                    "std_rwd": std_rewards,
-                    "mean_stages": mean_stages,
-                    "std_stages": std_stages,
-                    "mean_arcade_runs": mean_arcade_runs,
-                    "std_arcade_runs": std_arcade_runs,
-                }
-            })
 
     # Save evaluation results
     file_path = os.path.join(
@@ -304,46 +288,56 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str):# Game IDs
     print("----------See Plots----------")
     print("-----------------------------")
 
-    x = np.linspace(1, len(eval_chars), num=len(eval_chars))
+    x = np.linspace(1, len(model_paths), num=len(model_paths))
     colours = ["r", "g", "b", "y", "m", "c", "k"]
-    fig, axs = plt.subplots(nrows=1, ncols=3, sharex=True, sharey=False)
+    if eval_type == "character":
+        x_label = "Number of Characters"
+    elif eval_type == "game":
+        x_label = "Number of Games"
+    else:
+        x_label = "Model No. Evaluated"
+    plt.xlabel = x_label
+    figure_save_path = os.path.join(
+        base_path,
+        policy_params["folders"]["parent_dir"],
+        policy_params["folders"]["model_name"],
+    )
+
     for idx, seed in enumerate(seeds):
         mean_rwd = [eval_results[seed][epoch]["mean_rwd"] for epoch in eval_results[seed]]
         std_rwd = [eval_results[seed][epoch]["std_rwd"] for epoch in eval_results[seed]]
         pos_std = [sum(y) for y in zip(mean_rwd, std_rwd)]
         neg_std = [ya - yb for ya, yb in zip(mean_rwd, std_rwd)]
-        axs[0].plot(x, mean_rwd, color=colours[idx], label=f"Seed: {seed}")
-        axs[0].fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
+        plt.plot(x, mean_rwd, color=colours[idx], label=f"Seed: {seed}")
+        plt.fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
+    plt.ylabel("Average Reward Across Evaluation Episodes")
+    plt.grid()
+    plt.legend()
+    plt.savefig(os.path.join(figure_save_path, "reward_plot.png"))
 
+    for idx, seed in enumerate(seeds):
         mean_stages = [eval_results[seed][epoch]["mean_stages"] for epoch in eval_results[seed]]
         std_stages = [eval_results[seed][epoch]["std_stages"] for epoch in eval_results[seed]]
         pos_std = [sum(y) for y in zip(mean_stages, std_stages)]
         neg_std = [ya - yb for ya, yb in zip(mean_stages, std_stages)]
-        axs[1].plot(x, mean_stages, color=colours[idx], label=f"Seed: {seed}")
-        axs[1].fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
+        plt.plot(x, mean_stages, color=colours[idx], label=f"Seed: {seed}")
+        plt.fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
+    plt.ylabel("Average No. of Stages Completed Across Evaluation Episodes")
+    plt.grid()
+    plt.legend()
+    plt.savefig(os.path.join(figure_save_path, "stages_plot.png"))
 
+    for idx, seed in enumerate(seeds):
         mean_arcade_runs = [eval_results[seed][epoch]["mean_arcade_runs"] for epoch in eval_results[seed]]
         std_arcade_runs = [eval_results[seed][epoch]["std_arcade_runs"] for epoch in eval_results[seed]]
         pos_std = [sum(y) for y in zip(mean_arcade_runs, std_arcade_runs)]
         neg_std = [ya - yb for ya, yb in zip(mean_arcade_runs, std_arcade_runs)]
-        axs[2].plot(x, mean_arcade_runs, color=colours[idx], label=f"Seed: {seed}")
-        axs[2].fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
-
-    axs[0].set_ylabel("Average Reward Across Evaluation Episodes")
-    axs[1].set_ylabel("Average No. of Stages Completed Across Evaluation Episodes")
-    axs[2].set_ylabel("Average No. of Successful Arcade Runs Across Evaluation Episodes")
-    if eval_id:
-        x_label = "Number of Characters"
-    else:
-        x_label = "Number of Games"
-
-    for ax in axs:
-        ax.set_xlabel(x_label)
-        ax.grid(True)
-        ax.legend()
-
-    plt.savefig("eval_results.png")
-    plt.show()
+        plt.plot(x, mean_arcade_runs, color=colours[idx], label=f"Seed: {seed}")
+        plt.fill_between(x, pos_std, neg_std, facecolor=colours[idx], alpha=0.5)
+    plt.ylabel("Average No. of Successful Arcade Runs Across Evaluation Episodes")
+    plt.grid()
+    plt.legend()
+    plt.savefig(os.path.join(figure_save_path, "arcade_runs_plot.png"))
 
     return 0
 
@@ -352,6 +346,12 @@ if __name__ == "__main__":
     parser.add_argument("--policyCfg", type=str, required=False, help="Policy settings config", default="config_files/transfer-cfg-ppo.yaml")
     parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
     parser.add_argument("--evalCfg", type=str, required=False, help="Evaluation settings config", default="config_files/eval-cfg.yaml")
+    parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Evaluate deterministic or stochastic policy", default=True)
     opt = parser.parse_args()
 
-    main(opt.policyCfg, opt.settingsCfg, opt.evalCfg)
+    main(
+        policy_cfg=opt.policyCfg, 
+        settings_cfg=opt.settingsCfg, 
+        eval_cfg=opt.evalCfg,
+        deterministic=opt.deterministic,
+    )

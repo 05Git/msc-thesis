@@ -7,6 +7,7 @@ import argparse
 import yaml
 import custom_wrappers
 import time
+import utils
 
 # diambra run -g python sb3/record.py --gameID _ --settingsCfg config_files/transfer-cfg-settings.yaml --use_controller/--no-use_controller --numEpisodesToRecord _
 
@@ -18,7 +19,7 @@ def main(game_id: str, settings_cfg: str, use_controller: bool, num_episodes_to_
 
     # Load shared settings
     settings = settings_params["settings"]["shared"]
-    settings["action_space"] = SpaceTypes.MULTI_DISCRETE
+    settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
     settings["step_ratio"] = 1
     game_settings = settings_params["settings"][game_id]
     game_settings["characters"] = game_settings["characters"][0]
@@ -26,6 +27,7 @@ def main(game_id: str, settings_cfg: str, use_controller: bool, num_episodes_to_
     settings = load_settings_flat_dict(EnvironmentSettings, settings)
     wrappers_settings = settings_params["wrappers_settings"]
     wrappers_settings["flatten"] = True
+    stack_frames = wrappers_settings["stack_frames"]
     wrappers_settings = load_settings_flat_dict(WrappersSettings, wrappers_settings)
 
     # Set up seeds
@@ -37,9 +39,11 @@ def main(game_id: str, settings_cfg: str, use_controller: bool, num_episodes_to_
     recording_settings = RecordingSettings()
     recording_settings.username = "tgbn"
     if use_controller:
-        recording_settings.dataset_path = os.path.join(base_path, "recordings/human/episode_recording", game_id)
+        ep_recording_path = "recordings/human/episode_recording"
     else:
-        recording_settings.dataset_path = os.path.join(base_path, "recordings/random/episode_recording", game_id)
+        ep_recording_path = "recordings/random/episode_recording"
+    action_space = "discrete" if settings.action_space == SpaceTypes.DISCRETE else "multi_discrete"
+    recording_settings.dataset_path = os.path.join(base_path, ep_recording_path, game_id, action_space)
 
     for _ in range(num_episodes_to_record):
         seed = seeds[seed_idx]
@@ -52,8 +56,11 @@ def main(game_id: str, settings_cfg: str, use_controller: bool, num_episodes_to_
             seed=seed,
             no_vec=True,
         )
-        env = custom_wrappers.MDTransferWrapper(env)
-        # env = VecTransposeImage(DummyVecEnv([lambda: env]))
+        utils.set_global_seed(seed)
+        if settings.action_space == SpaceTypes.DISCRETE:
+            env = custom_wrappers.DiscreteTransferWrapper(env, stack_frames)
+        else:
+            env = custom_wrappers.MDTransferWrapper(env, stack_frames)
 
         if use_controller:
             # Controller initialization
@@ -67,14 +74,16 @@ def main(game_id: str, settings_cfg: str, use_controller: bool, num_episodes_to_
             # env.render()
             if use_controller:
                 actions = controller.get_actions()
+                if settings.action_space == SpaceTypes.DISCRETE:
+                    if actions[1] > 0:
+                        actions = 8 + actions[1] # In discrete action sets, action indices come after the movement indices
+                    else:
+                        actions = actions[0] # If no action idx, use the movement idx
             else:
                 actions = env.action_space.sample()
-            move, attack = actions
             observation, reward, terminated, truncated, info = env.step(actions)
-            done = terminated or truncated
             # Episode end (Done condition) check
-            if done:
-                observation, info = env.reset()
+            if terminated or truncated:
                 break
             if use_controller:
                 time.sleep(1e-2)
@@ -92,15 +101,15 @@ def main(game_id: str, settings_cfg: str, use_controller: bool, num_episodes_to_
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gameID", type=str, required=False, help="Specific game to record for")
-    parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
-    parser.add_argument("--numEpisodesToRecord", type=int, required=False, help="Env seed")
+    parser.add_argument("--gameID", type=str, required=False, help="Specific game to record for", default="sfiii3n")
+    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
+    parser.add_argument("--numEpisodesToRecord", type=int, required=False, help="Env seed", default=1)
     parser.add_argument('--use_controller', action=argparse.BooleanOptionalAction, required=True, help='Flag to activate use of controller')
     opt = parser.parse_args()
 
-    if not opt.numEpisodesToRecord:
-        num_episodes_to_record = 1
-    else:
-        num_episodes_to_record = opt.numEpisodesToRecord
-
-    main(opt.gameID, opt.settingsCfg, opt.use_controller, num_episodes_to_record)
+    main(
+        game_id=opt.gameID,
+        settings_cfg=opt.settingsCfg,
+        use_controller=opt.use_controller,
+        num_episodes_to_record=opt.numEpisodesToRecord,
+    )

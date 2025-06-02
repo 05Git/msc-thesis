@@ -1,6 +1,6 @@
 folders:
   parent_dir: "ppo_agents"
-  model_name: "sf3_ryu"
+  model_name: "sf3_ryu_bc"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -16,7 +16,7 @@ ppo_settings:
   n_epochs: 10
   n_steps: 128
   autosave_freq: 1_000_000
-  eval_freq: 500_000
+  eval_freq: 1_000_000
   time_steps: 10_000_000
   n_eval_episodes: 4
   seeds: !!python/tuple [ 0 ]
@@ -33,3 +33,5 @@ ppo_settings:
 
 imitation_settings:
   max_train_epochs: 5
+  n_imitation_steps: 100_000
+  

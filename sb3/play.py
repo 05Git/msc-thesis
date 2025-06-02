@@ -74,19 +74,9 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     policy_kwargs = policy_params["policy_kwargs"]
     if not policy_kwargs:
         policy_kwargs = {}
-    # agent = PPO(
-    #     policy_params["ppo_settings"]["policy_type"],
-    #     env,
-    #     policy_kwargs=policy_kwargs,
-    #     device=device,
-    #     seed=seed
-    # )
-    # agent.policy = agent.policy.load(
-    #     "/home/oscar/github/msc-thesis/sb3/ppo_agents/bc_imitation_test/model/seed_0/bc_policy",
-    #     weights_only=False
-    # )
+
     agent = PPO.load(
-        "/home/oscar/github/msc-thesis/sb3/ppo_agents/bc_imitation_human_ft/model/seed_0/550000",
+        "sb3/ppo_agents/sf3_ryu_bc/model/seed_0/0_autosave_5000000.zip",
         env=env,
         device=device,
         policy_kwargs=policy_kwargs,
@@ -134,17 +124,11 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #     }
     # )
 
-    # obs, _ = env.reset()
-    # while True:
-    #     action, _state = agent.predict(obs, deterministic=True)
-    #     if settings.action_space == SpaceTypes.DISCRETE:
-    #         action = int(action)
-    #     observation, reward, done, trunc, info = env.step(action)
-    #     if done or trunc:
-    #         break
     obs = env.reset()
     while True:
-        action, _ = agent.predict(obs, deterministic=False)
+        action, _ = agent.predict(obs, deterministic=True)
+    #     if settings.action_space == SpaceTypes.DISCRETE:
+    #         action = int(action)
         # print(f"Action: {action}")
         obs, rew, done, info = env.step(action)
         # print(f"Observation: {obs}")
@@ -171,9 +155,9 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policyCfg", type=str, required=True, help="Policy config")
-    parser.add_argument("--settingsCfg", type=str, required=True, help="Env settings config")
-    parser.add_argument("--gameID", type=str, required=True, help="Game to evaluate")
+    parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/transfer-cfg-ppo.yaml")
+    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
+    parser.add_argument("--gameID", type=str, required=False, help="Specific game to evaluate", default="sfiii3n")
     opt = parser.parse_args()
 
     main(opt.policyCfg, opt.settingsCfg, opt.gameID)
