@@ -2,7 +2,6 @@ import os
 import yaml
 import json
 import argparse
-import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 import tempfile
@@ -427,7 +426,7 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         policy_params["folders"]["parent_dir"],
         policy_params["folders"]["model_name"],
         "model",
-        "evaluation_results.json"
+        "training_results.json"
     )
     with open(file_path, "w") as f:
         json.dump(eval_results, f, indent=4)

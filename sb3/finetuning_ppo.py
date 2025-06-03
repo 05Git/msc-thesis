@@ -60,25 +60,12 @@ def main(policy_cfg: str, settings_cfg: str, source_id: str | None, char_transfe
 
     # PPO settings
     ppo_settings = policy_params["ppo_settings"]
-    policy = ppo_settings["policy_type"]
     gamma = ppo_settings["gamma"]
     model_checkpoint = ppo_settings["model_checkpoint"]
     n_eval_episodes = ppo_settings["n_eval_episodes"]
     learning_rate = linear_schedule(ppo_settings["learning_rate"][0], ppo_settings["learning_rate"][1])
     clip_range = linear_schedule(ppo_settings["clip_range"][0], ppo_settings["clip_range"][1])
     clip_range_vf = clip_range
-    batch_size = ppo_settings["batch_size"]
-    n_epochs = ppo_settings["n_epochs"]
-    n_steps = ppo_settings["n_steps"]
-    gae_lambda = ppo_settings["gae_lambda"]
-    ent_coef = ppo_settings["ent_coef"]
-    vf_coef = ppo_settings["vf_coef"]
-    max_grad_norm = ppo_settings["max_grad_norm"]
-    use_sde = ppo_settings["use_sde"]
-    sde_sample_freq = ppo_settings["sde_sample_freq"]
-    normalize_advantage = ppo_settings["normalize_advantage"]
-    stats_window_size = ppo_settings["stats_window_size"]
-    target_kl = ppo_settings["target_kl"]
     time_steps = ppo_settings["time_steps"]
     autosave_freq = ppo_settings["autosave_freq"]
     eval_freq = ppo_settings["eval_freq"]
@@ -186,7 +173,7 @@ def main(policy_cfg: str, settings_cfg: str, source_id: str | None, char_transfe
                 eval_freq=eval_freq // num_train_envs,
                 log_path=os.path.join(model_folder, f"seed_{seed}", epoch_settings.game_id, epoch_settings.characters),
                 best_model_save_path=os.path.join(model_folder, f"seed_{seed}", epoch_settings.game_id, epoch_settings.characters),
-                deterministic=False,
+                deterministic=True,
                 render=False,
                 callback_after_eval=stop_training,
                 verbose=1,

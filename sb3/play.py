@@ -76,7 +76,7 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
         policy_kwargs = {}
 
     agent = PPO.load(
-        "sb3/ppo_agents/sf3_ryu_bc/model/seed_0/0_autosave_5000000.zip",
+        "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/10000000.zip",
         env=env,
         device=device,
         policy_kwargs=policy_kwargs,
@@ -131,6 +131,7 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     #         action = int(action)
         # print(f"Action: {action}")
         obs, rew, done, info = env.step(action)
+        # print(type(info))
         # print(f"Observation: {obs}")
         # print(f"Reward: {rew}")
         # print(f"Dones: {dones}")

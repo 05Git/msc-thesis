@@ -1,0 +1,8 @@
+model_paths: [
+  "sb3/ppo_agents/sf3_ryu_bc/model/seed_0/0_autosave_1000000.zip",
+  "sb3/ppo_agents/sf3_ryu_bc/model/seed_0/0_autosave_5000000.zip",
+  "sb3/ppo_agents/sf3_ryu_bc/model/seed_0/10000000.zip",
+]
+
+transfer_type: null # null / "character" / "game"
+eval_id: "sfiii3n"

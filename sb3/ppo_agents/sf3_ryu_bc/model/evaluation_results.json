@@ -1,46 +1,28 @@
 {
     "0": {
-        "before_imitation": {
-            "eval_reward": {
-                "mean": 0.7422359999999999,
-                "std": 0.7394304230660413
-            },
-            "eval_stages": {
-                "mean": 1.875,
-                "std": 0.414578098794425
-            },
-            "eval_arcade_runs": {
-                "mean": 0.0,
-                "std": 0.0
-            }
+        "Model: sb3/ppo_agents/sf3_ryu_bc/model/seed_0/0_autosave_1000000.zip": {
+            "mean_reward": 1.0433489166666667,
+            "std_reward": 0.7948799670961291,
+            "mean_stages": 2.1458333333333335,
+            "std_stages": 0.40127833925537965,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
         },
-        "after_imitation": {
-            "eval_reward": {
-                "mean": -1.2861025000000001,
-                "std": 0.4843747078586216
-            },
-            "eval_stages": {
-                "mean": 0.0625,
-                "std": 0.10825317547305482
-            },
-            "eval_arcade_runs": {
-                "mean": 0.0,
-                "std": 0.0
-            }
+        "Model: sb3/ppo_agents/sf3_ryu_bc/model/seed_0/0_autosave_5000000.zip": {
+            "mean_reward": 1.5856623958333333,
+            "std_reward": 0.9651816358690545,
+            "mean_stages": 2.75,
+            "std_stages": 0.47871355387816905,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
         },
-        "after_training": {
-            "eval_reward": {
-                "mean": 0.921972,
-                "std": 0.8799593781970847
-            },
-            "eval_stages": {
-                "mean": 1.875,
-                "std": 0.739509972887452
-            },
-            "eval_arcade_runs": {
-                "mean": 0.0,
-                "std": 0.0
-            }
+        "Model: sb3/ppo_agents/sf3_ryu_bc/model/seed_0/10000000.zip": {
+            "mean_reward": 1.423266,
+            "std_reward": 0.992353863111256,
+            "mean_stages": 2.2708333333333335,
+            "std_stages": 0.4140543107156623,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
         }
     }
 }

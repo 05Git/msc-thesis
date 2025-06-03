@@ -1,6 +1,6 @@
 folders:
   parent_dir: "ppo_agents"
-  model_name: "sf3_ryu_bc"
+  model_name: "sf3_ryu_bc_easy"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -18,7 +18,7 @@ ppo_settings:
   autosave_freq: 1_000_000
   eval_freq: 1_000_000
   time_steps: 10_000_000
-  n_eval_episodes: 4
+  n_eval_episodes: 5
   seeds: !!python/tuple [ 0 ]
 
   gae_lambda: 0.95

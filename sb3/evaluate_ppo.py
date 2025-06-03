@@ -16,7 +16,7 @@ import custom_wrappers
 import custom_callbacks
 import utils
 
-# diambra run -s 8 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py --no-deterministic
+# diambra run -s 12 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py --no-deterministic
 
 def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool):
     # Game IDs
@@ -63,6 +63,8 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
         eval_id = None
 
     envs_settings = []
+    settings = settings_params["settings"]["shared"]
+    settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
     if eval_id:
         game_settings = settings_params["settings"][eval_id]
         if eval_params["transfer_type"] == "character":
@@ -90,11 +92,6 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     # Load wrappers settings as dictionary
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
     stack_frames = settings_params["wrappers_settings"]["stack_frames"]
-    # Load shared settings
-    settings = settings_params["settings"]["shared"]
-    # Set action space type
-    settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
-    game_settings = settings_params["settings"][eval_id]
 
     eval_results = {}
     for seed in seeds:
@@ -304,8 +301,8 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     )
 
     for idx, seed in enumerate(seeds):
-        mean_rwd = [eval_results[seed][epoch]["mean_rwd"] for epoch in eval_results[seed]]
-        std_rwd = [eval_results[seed][epoch]["std_rwd"] for epoch in eval_results[seed]]
+        mean_rwd = [eval_results[seed][epoch]["mean_reward"] for epoch in eval_results[seed]]
+        std_rwd = [eval_results[seed][epoch]["std_reward"] for epoch in eval_results[seed]]
         pos_std = [sum(y) for y in zip(mean_rwd, std_rwd)]
         neg_std = [ya - yb for ya, yb in zip(mean_rwd, std_rwd)]
         plt.plot(x, mean_rwd, color=colours[idx], label=f"Seed: {seed}")
