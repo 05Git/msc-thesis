@@ -152,7 +152,12 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             print("\nActivated {} environment(s)".format(num_eval_envs + num_train_envs))
 
             # Load policy params if checkpoint exists, else make a new agent
-            checkpoint_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
+            save_path = os.path.join(model_folder, f"seed_{seed}")
+            if char_transfer:
+                save_path = os.path.join(save_path, "char_transfer")
+            elif not train_id:
+                save_path = os.path.join(save_path, "game_transfer")
+            checkpoint_path = os.path.join(save_path, model_checkpoint)
             if int(model_checkpoint) > 0 and os.path.exists(checkpoint_path):
                 print("\n Checkpoint found, loading model.")
                 agent = PPO.load(
@@ -206,7 +211,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
             auto_save_callback = AutoSave(
                 check_freq=autosave_freq,
                 num_envs=num_train_envs,
-                save_path=os.path.join(model_folder, f"seed_{seed}"),
+                save_path=save_path,
                 filename_prefix=model_checkpoint + "_"
             )
             diambra_eval_callback = custom_callbacks.DiambraEvalCallback(verbose=0)
@@ -215,8 +220,8 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                 eval_env=eval_env,
                 n_eval_episodes=n_eval_episodes * num_eval_envs, # Ensure each env completes required num of eval episodes
                 eval_freq=eval_freq // num_train_envs,
-                log_path=os.path.join(model_folder, f"seed_{seed}"),
-                best_model_save_path=os.path.join(model_folder, f"seed_{seed}"),
+                log_path=os.path.join(save_path, f"{epoch_settings.game_id}_{epoch_settings.characters}"),
+                best_model_save_path=os.path.join(save_path, f"{epoch_settings.game_id}_{epoch_settings.characters}"),
                 deterministic=True,
                 render=False,
                 callback_after_eval=stop_training,
@@ -236,7 +241,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
 
             # Save the agent
             model_checkpoint = str(int(model_checkpoint) + time_steps)
-            model_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
+            model_path = os.path.join(save_path, model_checkpoint)
             agent.save(model_path)
 
             train_env.close()

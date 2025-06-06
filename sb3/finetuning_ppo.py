@@ -104,6 +104,7 @@ def main(policy_cfg: str, settings_cfg: str, source_id: str | None, char_transfe
             env_settings.update(game_settings)
             env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
             envs_settings.append(env_settings)
+            
 
     eval_results = {}
     for seed in seeds:

@@ -23,7 +23,7 @@ settings:
 
   sfiii3n:
     game_id: "sfiii3n"
-    characters: [ "Ryu", "Urien", "Makoto" ]
+    characters: [ "Ryu", "Urien", "Makoto", "Hugo" ]
     difficulty: 1
     super_art: 1
 
@@ -40,11 +40,11 @@ settings:
 
   umk3:
     game_id: "umk3"
-    characters: [ "Liu Kang", "Kitana", "Shang Tsung" ]
+    characters: [ "Liu Kang", "Jax", "Kitana", "Shang Tsung" ]
     difficulty: 1
     tower: 1
 
   samsh5sp:
     game_id: "samsh5sp"
-    characters: [ "Haohmaru", "Nakoruru", "Tamtam" ]
+    characters: [ "Haohmaru", "Charlotte", "Nakoruru", "Tamtam" ]
     difficulty: 1

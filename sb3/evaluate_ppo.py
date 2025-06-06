@@ -16,7 +16,7 @@ import custom_wrappers
 import custom_callbacks
 import utils
 
-# diambra run -s 12 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py --no-deterministic
+# diambra run -s 4 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py --no-deterministic
 
 def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool):
     # Game IDs
@@ -68,8 +68,8 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     if eval_id:
         game_settings = settings_params["settings"][eval_id]
         if eval_params["transfer_type"] == "character":
-            for character in game_settings["characters"]:
-                game_settings["characters"] = character
+            for char in game_settings["characters"]:
+                game_settings["characters"] = char
                 env_settings = settings.copy()
                 env_settings.update(game_settings)
                 env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
@@ -152,29 +152,25 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
                 mean_arcade_runs, std_arcade_runs = np.mean(mean_arcade_runs), np.mean(std_arcade_runs)
                 eval_results[seed].update({
                     f"Model: {path}, Games: {idx_1 + 1}": {
-                        "mean_reward": mean_reward,
-                        "std_reward": std_reward,
+                        "mean_reward": mean_rewards,
+                        "std_reward": std_rewards,
                         "mean_stages": mean_stages,
                         "std_stages": std_stages,
-                        "mean_arcade_runs": mean_arcades,
-                        "std_arcade_runs": std_arcades,
+                        "mean_arcade_runs": mean_arcade_runs,
+                        "std_arcade_runs": std_arcade_runs,
                     }
                 })
         elif eval_type == "character":
             # Cross character transfer
             for idx_1, path in enumerate(model_paths):
                 # Initialize array of characters to evaluate
-                chars_to_eval = game_settings["characters"][:idx_1 + 1]
+                eval_settings = envs_settings[:idx_1 + 1]
                 # Initialize vectors to store evaluation info
                 mean_rewards, std_rewards = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
                 mean_stages, std_stages = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
                 mean_arcade_runs, std_arcade_runs = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
-                for idx_2, char in enumerate(chars_to_eval):
-                    # Set up env
-                    game_settings["characters"] = char
-                    settings.update(game_settings)
-                    env_settings = load_settings_flat_dict(EnvironmentSettings, settings)
-                    env, num_envs = make_sb3_env(env_settings.game_id, env_settings, wrappers_settings, seed=seed)
+                for idx_2, settings in enumerate(eval_settings):
+                    env, num_envs = make_sb3_env(env_settings.game_id, settings, wrappers_settings, seed=seed)
                     if env_settings.action_space == SpaceTypes.DISCRETE:
                         env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames)
                     else:
@@ -213,12 +209,12 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
                 mean_arcade_runs, std_arcade_runs = np.mean(mean_arcade_runs), np.mean(std_arcade_runs)
                 eval_results[seed].update({
                     f"Model: {path}, Chars: {idx_1 + 1}": {
-                        "mean_reward": mean_reward,
-                        "std_reward": std_reward,
+                        "mean_reward": mean_rewards,
+                        "std_reward": std_rewards,
                         "mean_stages": mean_stages,
                         "std_stages": std_stages,
-                        "mean_arcade_runs": mean_arcades,
-                        "std_arcade_runs": std_arcades,
+                        "mean_arcade_runs": mean_arcade_runs,
+                        "std_arcade_runs": std_arcade_runs,
                     }
                 })
         else:
@@ -269,14 +265,19 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
             env.close()
 
     # Save evaluation results
-    file_path = os.path.join(
+    save_path = os.path.join(
         base_path,
         policy_params["folders"]["parent_dir"],
         policy_params["folders"]["model_name"],
         "model",
-        "evaluation_results.json"
     )
-    with open(file_path, "w") as f:
+    if eval_type == "character":
+        save_path = os.path.join(save_path, "char_transfer_results.json")
+    elif eval_type == "game":
+        save_path = os.path.join(save_path, "game_transfer_results.json")
+    else:
+        save_path = os.path.join(save_path, "evaluation_results.json")
+    with open(save_path, "w") as f:
         json.dump(eval_results, f, indent=4)
 
     print("-----------------------------")
@@ -293,13 +294,15 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
         x_label = "Number of Games"
     else:
         x_label = "Model No. Evaluated"
-    plt.xlabel = x_label
     figure_save_path = os.path.join(
         base_path,
         policy_params["folders"]["parent_dir"],
         policy_params["folders"]["model_name"],
+        "model",
     )
 
+    plt.figure()
+    plt.xlabel(x_label)
     for idx, seed in enumerate(seeds):
         mean_rwd = [eval_results[seed][epoch]["mean_reward"] for epoch in eval_results[seed]]
         std_rwd = [eval_results[seed][epoch]["std_reward"] for epoch in eval_results[seed]]
@@ -312,6 +315,8 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     plt.legend()
     plt.savefig(os.path.join(figure_save_path, "reward_plot.png"))
 
+    plt.figure()
+    plt.xlabel(x_label)
     for idx, seed in enumerate(seeds):
         mean_stages = [eval_results[seed][epoch]["mean_stages"] for epoch in eval_results[seed]]
         std_stages = [eval_results[seed][epoch]["std_stages"] for epoch in eval_results[seed]]
@@ -324,6 +329,8 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     plt.legend()
     plt.savefig(os.path.join(figure_save_path, "stages_plot.png"))
 
+    plt.figure()
+    plt.xlabel(x_label)
     for idx, seed in enumerate(seeds):
         mean_arcade_runs = [eval_results[seed][epoch]["mean_arcade_runs"] for epoch in eval_results[seed]]
         std_arcade_runs = [eval_results[seed][epoch]["std_arcade_runs"] for epoch in eval_results[seed]]

@@ -1,0 +1,36 @@
+{
+    "0": {
+        "Model: sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/10000000.zip, Chars: 1": {
+            "mean_reward": 2.4244305999999995,
+            "std_reward": 1.294579265774949,
+            "mean_stages": 3.3333333333333335,
+            "std_stages": 0.43969686527576407,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        },
+        "Model: sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/10000000.zip, Chars: 2": {
+            "mean_reward": 1.451708075,
+            "std_reward": 0.9954730761826156,
+            "mean_stages": 2.1833333333333336,
+            "std_stages": 0.22107581685748584,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        },
+        "Model: sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/10000000.zip, Chars: 3": {
+            "mean_reward": 1.3773982222222223,
+            "std_reward": 1.0769987037333943,
+            "mean_stages": 2.283333333333333,
+            "std_stages": 0.21853916750492963,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        },
+        "Model: sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/10000000.zip, Chars: 4": {
+            "mean_reward": 1.4271221874999998,
+            "std_reward": 0.9410214154363785,
+            "mean_stages": 2.2958333333333334,
+            "std_stages": 0.20501539817856299,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        }
+    }
+}
