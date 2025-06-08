@@ -235,6 +235,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                     callback=callback_list,
                     reset_num_timesteps=True,
                     progress_bar=True,
+                    tb_log_name=f"{epoch_settings.game_id}_{epoch_settings.characters}",
                 )
             except KeyboardInterrupt:
                 print("Training interrupted. Saving model before exiting.")
@@ -254,7 +255,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/transfer-cfg-ppo.yaml")
     parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
-    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default="sfiii3n")
+    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default=None)
     parser.add_argument('--charTransfer', action=argparse.BooleanOptionalAction, required=False, help="Evaluate character transfer or not", default=False)
     parser.add_argument('--numTrainEnvs', type=int, required=False, help="Number of training environments", default=8)
     parser.add_argument('--numEvalEnvs', type=int, required=False, help="Number of evaluation environments", default=4)

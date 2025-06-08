@@ -49,8 +49,8 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
     settings["step_ratio"] = 1
     game_settings = settings_params["settings"][game_id]
-    # game_settings["characters"] = game_settings["characters"][0]
-    game_settings["characters"] = "Makoto"
+    game_settings["characters"] = game_settings["characters"][0]
+    # game_settings["characters"] = "Ryu"
     settings.update(game_settings)
     settings = load_settings_flat_dict(EnvironmentSettings, settings)
 
@@ -77,7 +77,7 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
         policy_kwargs = {}
 
     agent = PPO.load(
-        "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/char_transfer/20000000.zip",
+        "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/game_transfer/15000000.zip",
         env=env,
         device=device,
         policy_kwargs=policy_kwargs,

@@ -9,16 +9,16 @@ policy_kwargs:
 ppo_settings:
   policy_type: "CnnPolicy"
   gamma: 0.99
-  model_checkpoint: "10000000"
+  model_checkpoint: "5000000"
   learning_rate: [ 2.5e-4, 2.5e-6 ]
   clip_range: [ 0.15, 0.025 ]
   batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
   n_epochs: 10
   n_steps: 128
   autosave_freq: 1_000_000
-  eval_freq: 500_000
+  eval_freq: 1_000_000
   time_steps: 5_000_000
-  n_eval_episodes: 15
+  n_eval_episodes: 10
   seeds: !!python/tuple [ 0 ]
 
   gae_lambda: 0.95

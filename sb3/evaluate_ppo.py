@@ -16,7 +16,7 @@ import custom_wrappers
 import custom_callbacks
 import utils
 
-# diambra run -s 4 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py --no-deterministic
+# diambra run -s 10 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py --deterministic
 
 def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool):
     # Game IDs
@@ -68,11 +68,10 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     if eval_id:
         game_settings = settings_params["settings"][eval_id]
         if eval_params["transfer_type"] == "character":
-            for char in game_settings["characters"]:
+            for char in eval_params["characters"]:
                 game_settings["characters"] = char
                 env_settings = settings.copy()
                 env_settings.update(game_settings)
-                env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
                 envs_settings.append(env_settings)
         else:
             game_settings["characters"] = game_settings["characters"][0]
@@ -81,12 +80,13 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
             env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
             envs_settings.append(env_settings)
     else:
-        for game_id in game_ids:
-            game_settings = settings_params["settings"][game_id]
-            game_settings["characters"] = game_settings["characters"][0]
+        for game_list in eval_params["games"]:
             env_settings = settings.copy()
-            env_settings.update(game_settings)
-            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
+            env_settings["characters"] = {}
+            for game_id in game_list:
+                game_settings = settings_params["settings"][game_id]
+                game_settings["characters"] = { game_id : game_settings["characters"][0] }
+                env_settings.update(game_settings)
             envs_settings.append(env_settings)
     
     # Load wrappers settings as dictionary
@@ -101,20 +101,20 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
         if eval_type == "game":
             # Cross game transfer
             for idx_1, path in enumerate(model_paths):
-                # Initialize array of characters to evaluate
-                games_to_eval = game_ids[:idx_1 + 1]
+                print(f"Evaluation {idx_1 + 1}")
+                eval_settings = envs_settings[idx_1]
+                eval_characters = eval_settings["characters"]
                 # Initialize vectors to store evaluation info
                 mean_rewards, std_rewards = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
                 mean_stages, std_stages = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
                 mean_arcade_runs, std_arcade_runs = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
-                for idx_2, game_id in enumerate(games_to_eval):
+                for idx_2, game_id in enumerate(eval_characters.keys()):
                     # Set up env
-                    game_settings = settings_params["settings"][eval_id]
-                    game_settings["characters"] = game_settings["characters"][0]
-                    settings.update(game_settings)
-                    env_settings = load_settings_flat_dict(EnvironmentSettings, settings)
-                    env, num_envs = make_sb3_env(env_settings.game_id, env_settings, wrappers_settings, seed=seed)
-                    if env_settings.action_space == SpaceTypes.DISCRETE:
+                    eval_settings["game_id"] = game_id
+                    eval_settings["characters"] = eval_characters[game_id]
+                    eval_settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
+                    env, num_envs = make_sb3_env(eval_settings.game_id, eval_settings, wrappers_settings, seed=seed)
+                    if eval_settings.action_space == SpaceTypes.DISCRETE:
                         env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames)
                     else:
                         env = custom_wrappers.VecEnvMDTransferWrapper(env, stack_frames)
@@ -151,7 +151,7 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
                 mean_stages, std_stages = np.mean(mean_stages), np.mean(std_stages)
                 mean_arcade_runs, std_arcade_runs = np.mean(mean_arcade_runs), np.mean(std_arcade_runs)
                 eval_results[seed].update({
-                    f"Model: {path}, Games: {idx_1 + 1}": {
+                    f"Model: {path}, Games: {list(eval_characters.keys())}": {
                         "mean_reward": mean_rewards,
                         "std_reward": std_rewards,
                         "mean_stages": mean_stages,
@@ -163,15 +163,17 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
         elif eval_type == "character":
             # Cross character transfer
             for idx_1, path in enumerate(model_paths):
-                # Initialize array of characters to evaluate
-                eval_settings = envs_settings[:idx_1 + 1]
+                print(f"Evaluation {idx_1 + 1}")
+                eval_settings = envs_settings[idx_1]
+                eval_characters = envs_settings["characters"]
                 # Initialize vectors to store evaluation info
                 mean_rewards, std_rewards = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
                 mean_stages, std_stages = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
                 mean_arcade_runs, std_arcade_runs = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
-                for idx_2, settings in enumerate(eval_settings):
-                    env, num_envs = make_sb3_env(env_settings.game_id, settings, wrappers_settings, seed=seed)
-                    if env_settings.action_space == SpaceTypes.DISCRETE:
+                for idx_2, character in enumerate(eval_characters):
+                    eval_settings["characters"] = character
+                    env, num_envs = make_sb3_env(eval_settings.game_id, eval_settings, wrappers_settings, seed=seed)
+                    if eval_settings.action_space == SpaceTypes.DISCRETE:
                         env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames)
                     else:
                         env = custom_wrappers.VecEnvMDTransferWrapper(env, stack_frames)
@@ -208,7 +210,7 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
                 mean_stages, std_stages = np.mean(mean_stages), np.mean(std_stages)
                 mean_arcade_runs, std_arcade_runs = np.mean(mean_arcade_runs), np.mean(std_arcade_runs)
                 eval_results[seed].update({
-                    f"Model: {path}, Chars: {idx_1 + 1}": {
+                    f"Model: {path}, Characters: {eval_characters}": {
                         "mean_reward": mean_rewards,
                         "std_reward": std_rewards,
                         "mean_stages": mean_stages,
