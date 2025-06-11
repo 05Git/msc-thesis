@@ -1,21 +1,20 @@
 model_paths: [
-  "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/game_transfer/20000000.zip",
-  "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/game_transfer/20000000.zip",
-  "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/game_transfer/20000000.zip",
-  "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/game_transfer/20000000.zip",
+  "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/char_transfer/10000000.zip",
+  "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/char_transfer/15000000.zip",
+  "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/char_transfer/20000000.zip",
+  "sb3/ppo_agents/sf3_ryu_bc_easy/model/seed_0/char_transfer/25000000.zip",
 ]
-transfer_type: "game" # null / "character" / "game"
+transfer_type: "character" # null / "character" / "game"
 eval_id: "sfiii3n"
 characters: [
-  # ["Ryu"],
-  # ["Ryu", "Urien"],
-  # ["Ryu", "Urien", "Makoto"],
-  # ["Ryu", "Urien", "Makoto", "Hugo"],
-  ["Ken", "Q", "Alex"]
+  ["Ryu"],
+  ["Ryu","Urien"],
+  ["Ryu","Urien","Makoto"],
+  ["Ryu","Urien","Makoto","Hugo"],
 ]
 games: [
   ["sfiii3n"],
-  ["kof98umh"],
-  ["umk3"],
-  ["samsh5sp"],
+  ["sfiii3n", "kof98umh"],
+  ["sfiii3n", "kof98umh", "umk3"],
+  ["sfiii3n", "kof98umh", "umk3", "samsh5sp"],
 ]
