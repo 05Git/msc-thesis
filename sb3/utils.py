@@ -123,5 +123,7 @@ def make_sb3_envs(
     train_env = VecTransposeImage(train_env)
     eval_env = VecTransposeImage(eval_env)
 
-    set_global_seed(seed) # Set global seed
+    if seed:
+        set_global_seed(seed) # Set global seed
+
     return train_env, eval_env
