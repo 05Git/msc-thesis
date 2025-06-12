@@ -23,7 +23,9 @@ settings:
 
   sfiii3n:
     game_id: "sfiii3n"
-    characters: [ "Ryu", "Urien", "Makoto", "Hugo" ]
+    characters: 
+      train: [ "Ryu", "Urien", "Makoto", "Hugo" ]
+      eval: [ "Ken", "Alex", "Yang" ]
     difficulty: 1
     super_art: 1
 

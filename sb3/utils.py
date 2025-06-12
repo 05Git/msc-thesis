@@ -22,7 +22,8 @@ def make_sb3_envs(
     game_id: str,
     num_train_envs: int,
     num_eval_envs: int,
-    env_settings: EnvironmentSettings=EnvironmentSettings(),
+    train_env_settings: EnvironmentSettings=EnvironmentSettings(),
+    eval_env_settings: EnvironmentSettings=EnvironmentSettings(),
     wrappers_settings: WrappersSettings=WrappersSettings(),
     episode_recording_settings: RecordingSettings=RecordingSettings(),
     render_mode: str="rgb_array", 
@@ -34,7 +35,7 @@ def make_sb3_envs(
     use_subprocess: bool=True, 
     log_dir_base: str="/tmp/DIAMBRALog/"
   ):
-  def _make_sb3_env(rank, seed):
+  def _make_sb3_env(rank, seed, env_settings):
         # Seed management
         env_settings.seed = int(time.time()) if seed is None else seed
         env_settings.seed += rank
@@ -58,12 +59,12 @@ def make_sb3_envs(
   else:
       # When using one environment, no need to start subprocesses
       if (num_train_envs == 1 and num_eval_envs == 1) or not use_subprocess:
-          train_env = DummyVecEnv([_make_sb3_env(i + start_index, seed) for i in range(num_train_envs)])
+          train_env = DummyVecEnv([_make_sb3_env(i + start_index, seed, train_env_settings) for i in range(num_train_envs)])
           start_index = num_train_envs
-          eval_env = DummyVecEnv([_make_sb3_env(i + start_index, seed) for i in range(num_eval_envs)])
+          eval_env = DummyVecEnv([_make_sb3_env(i + start_index, seed, eval_env_settings) for i in range(num_eval_envs)])
       else:
-          train_env = SubprocVecEnv([_make_sb3_env(i + start_index, seed) for i in range(num_train_envs)], start_method=start_method)
+          train_env = SubprocVecEnv([_make_sb3_env(i + start_index, seed, train_env_settings) for i in range(num_train_envs)], start_method=start_method)
           start_index = num_train_envs
-          eval_env = SubprocVecEnv([_make_sb3_env(i + start_index, seed) for i in range(num_eval_envs)], start_method=start_method)
+          eval_env = SubprocVecEnv([_make_sb3_env(i + start_index, seed, eval_env_settings) for i in range(num_eval_envs)], start_method=start_method)
 
   return train_env, eval_env

@@ -1,6 +1,6 @@
 folders:
   parent_dir: "ppo_agents"
-  model_name: "sf3_ryu_bc_easy"
+  model_name: "test"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -15,9 +15,9 @@ ppo_settings:
   batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
   n_epochs: 10
   n_steps: 128
-  autosave_freq: 500_000
-  eval_freq: 500_000
-  time_steps: 2_000_000
+  autosave_freq: 1_000_000
+  eval_freq: 1_000_000
+  time_steps: 20_000_000
   n_eval_episodes: 12
   seeds: !!python/tuple [ 0 ]
 

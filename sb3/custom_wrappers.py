@@ -7,7 +7,7 @@ class VecEnvMDTransferWrapper(VecEnvWrapper):
     VectorEnv Multi-Discrete Transfer Wrapper
     Necessary for wrapping SubprocVecEnvs during distributed training
     '''
-    def __init__(self, venv: VecEnv, stack_frames: int, no_move_idx: int = 0, no_attack_idx: int = 0):
+    def __init__(self, venv: VecEnv, stack_frames: int, characters: list[str], no_move_idx: int = 0, no_attack_idx: int = 0):
         super().__init__(venv=venv)
         self.venv = venv
         self.valid_moves = venv.action_space.nvec[0]
@@ -20,10 +20,12 @@ class VecEnvMDTransferWrapper(VecEnvWrapper):
             self.image_space_keys = venv.unwrapped.image_space_keys
         else:
             self.image_space_keys = ["frame"]
+        self.characters = characters
+        self.char_queue = list(np.random.permutation(self.characters))
 
     def reset(self) -> np.ndarray:
         obs = self.venv.reset()
-        return obs["frame"]
+        return obs[self.image_space_keys[0]]
 
     def step_async(self, actions: np.ndarray) -> None:
         '''
@@ -38,8 +40,17 @@ class VecEnvMDTransferWrapper(VecEnvWrapper):
         self.venv.step_async(actions)
 
     def step_wait(self):
-        obs, reward, done, info = self.venv.step_wait()
-        return obs["frame"], reward, done, info
+        obs, reward, dones, info = self.venv.step_wait()
+        if np.any(dones):
+            for i, done in enumerate(dones):
+                if done:
+                    episode_settings = {
+                        "characters" : str(self.char_queue.pop(0))
+                    }
+                    if not len(self.char_queue) > 0:
+                        self.char_queue = list(np.random.permutation(self.characters))
+                    obs[i] = self.venv.env_method("reset", indices=i, options=episode_settings)[0]
+        return obs[self.image_space_keys[0]], reward, dones, info
 
 class VecEnvDiscreteTransferWrapper(VecEnvWrapper):
     '''

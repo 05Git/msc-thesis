@@ -102,20 +102,11 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     # Load game specific settings
     if train_id:
         game_settings = settings_params["settings"][train_id]
-        if char_transfer:
-            for character in game_settings["characters"]:
-                game_settings["characters"] = character
-                env_settings = settings.copy()
-                env_settings.update(game_settings)
-                env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
-                envs_settings.append(env_settings)
-        else:
-            game_settings["characters"] = game_settings["characters"][0]
-            env_settings = settings.copy()
-            env_settings.update(game_settings)
-            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
-            envs_settings.append(env_settings)
+        env_settings = settings.copy()
+        env_settings.update(game_settings)
+        envs_settings.append(env_settings)
     else:
+        # TODO: Adjust according to interleaved changes
         for game_id in game_ids:
             game_settings = settings_params["settings"][game_id]
             game_settings["characters"] = game_settings["characters"][0]
@@ -127,24 +118,38 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
     for seed in seeds:
         utils.set_global_seed(seed)
         for epoch in range(len(envs_settings)):
-            epoch_settings = envs_settings[epoch]
+            # Set up separate settings for train and evaluation envs
+            train_settings = envs_settings[epoch].copy()
+            train_settings["characters"] = train_settings["characters"]["train"]
+            eval_settings = envs_settings[epoch].copy()
+            eval_settings["characters"] = eval_settings["characters"]["eval"]
+            if not char_transfer:
+                train_settings["characters"] = [train_settings["characters"][0]] # If we only want to train on one character
+                eval_settings["characters"] = [eval_settings["characters"][0]]
+            train_characters = train_settings["characters"].copy() # Make a list of characters to train on
+            eval_characters = eval_settings["characters"].copy()
+            train_settings["characters"] = train_settings["characters"][0] # Set initial character to the first one one the list, so that the dict can be loaded
+            train_settings = load_settings_flat_dict(EnvironmentSettings, train_settings)
+            eval_settings["characters"] = eval_settings["characters"][0]
+            eval_settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
 
             # Initialise envs and wrap in transfer wrappers
             train_env, eval_env = utils.make_sb3_envs(
-                game_id=epoch_settings.game_id,
+                game_id=train_settings.game_id,
                 num_train_envs=num_train_envs,
                 num_eval_envs=num_eval_envs,
-                env_settings=epoch_settings, 
+                train_env_settings=train_settings,
+                eval_env_settings=eval_settings, 
                 wrappers_settings=wrappers_settings, 
                 seed=seed,
                 use_subprocess=True,
             )
-            if epoch_settings.action_space == SpaceTypes.DISCRETE:
-                train_env = custom_wrappers.VecEnvDiscreteTransferWrapper(train_env, stack_frames)
-                eval_env = custom_wrappers.VecEnvDiscreteTransferWrapper(eval_env, stack_frames)
+            if train_settings.action_space == SpaceTypes.DISCRETE:
+                train_env = custom_wrappers.VecEnvDiscreteTransferWrapper(train_env, stack_frames, characters=train_characters)
+                eval_env = custom_wrappers.VecEnvDiscreteTransferWrapper(eval_env, stack_frames, characters=eval_characters)
             else:
-                train_env = custom_wrappers.VecEnvMDTransferWrapper(train_env, stack_frames)
-                eval_env = custom_wrappers.VecEnvMDTransferWrapper(eval_env, stack_frames)
+                train_env = custom_wrappers.VecEnvMDTransferWrapper(train_env, stack_frames, characters=train_characters)
+                eval_env = custom_wrappers.VecEnvMDTransferWrapper(eval_env, stack_frames, characters=eval_characters)
             train_env = VecTransposeImage(train_env)
             eval_env = VecTransposeImage(eval_env)
             print(f"\nOriginal action space: {train_env.unwrapped.action_space}")
@@ -220,8 +225,8 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                 eval_env=eval_env,
                 n_eval_episodes=n_eval_episodes * num_eval_envs, # Ensure each env completes required num of eval episodes
                 eval_freq=eval_freq // num_train_envs,
-                log_path=os.path.join(save_path, f"{epoch_settings.game_id}_{epoch_settings.characters}"),
-                best_model_save_path=os.path.join(save_path, f"{epoch_settings.game_id}_{epoch_settings.characters}"),
+                log_path=os.path.join(save_path, f"{train_settings.game_id}"),
+                best_model_save_path=os.path.join(save_path, f"{train_settings.game_id}"),
                 deterministic=True,
                 render=False,
                 callback_after_eval=stop_training,
@@ -235,7 +240,7 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                     callback=callback_list,
                     reset_num_timesteps=True,
                     progress_bar=True,
-                    tb_log_name=f"{epoch_settings.game_id}_{epoch_settings.characters}",
+                    tb_log_name=f"{train_settings.game_id}",
                 )
             except KeyboardInterrupt:
                 print("Training interrupted. Saving model before exiting.")
