@@ -5,23 +5,26 @@ import os
 import time
 
 import diambra.arena
-from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings
+from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings, SpaceTypes
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecTransposeImage
+import custom_wrappers
 
 def set_global_seed(seed):
-  random.seed(seed)
-  np.random.seed(seed)
-  torch.manual_seed(seed)
-  torch.cuda.manual_seed(seed)
-  torch.cuda.manual_seed_all(seed)
-  torch.backends.cudnn.deterministic = True
-  torch.backends.cudnn.benchmark = False
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def make_sb3_envs(
     game_id: str,
     num_train_envs: int,
     num_eval_envs: int,
+    train_characters: list[str],
+    eval_characters: list[str],
     train_env_settings: EnvironmentSettings=EnvironmentSettings(),
     eval_env_settings: EnvironmentSettings=EnvironmentSettings(),
     wrappers_settings: WrappersSettings=WrappersSettings(),
@@ -34,37 +37,91 @@ def make_sb3_envs(
     no_vec: bool=False,
     use_subprocess: bool=True, 
     log_dir_base: str="/tmp/DIAMBRALog/"
-  ):
-  def _make_sb3_env(rank, seed, env_settings):
+    ):
+    def _make_sb3_env(rank: int, seed: int, env_settings: EnvironmentSettings, characters: list[str], discrete: bool):
         # Seed management
         env_settings.seed = int(time.time()) if seed is None else seed
         env_settings.seed += rank
 
         def _init():
             env = diambra.arena.make(game_id, env_settings, wrappers_settings,
-                                     episode_recording_settings, render_mode, rank=rank)
+                                        episode_recording_settings, render_mode, rank=rank)
 
             # Create log dir
             log_dir = os.path.join(log_dir_base, str(rank))
             os.makedirs(log_dir, exist_ok=True)
             env = Monitor(env, log_dir, allow_early_resets=allow_early_resets)
+            if discrete:
+                env = custom_wrappers.DiscreteTransferWrapper(
+                    env=env,
+                    stack_frames=wrappers_settings.stack_frames,
+                    characters=characters,
+                )
+            else:
+                env = custom_wrappers.MDTransferWrapper(
+                    env=env,
+                    stack_frames=wrappers_settings.stack_frames,
+                    characters=characters,
+                )
             return env
-        set_global_seed(env_settings.seed)
         return _init
-  
-  # If not wanting vectorized envs
-  if no_vec and num_train_envs == 1 and num_eval_envs == 1:
-      train_env = _make_sb3_env(0, seed)()
-      eval_env = _make_sb3_env(1, seed)()
-  else:
-      # When using one environment, no need to start subprocesses
-      if (num_train_envs == 1 and num_eval_envs == 1) or not use_subprocess:
-          train_env = DummyVecEnv([_make_sb3_env(i + start_index, seed, train_env_settings) for i in range(num_train_envs)])
-          start_index = num_train_envs
-          eval_env = DummyVecEnv([_make_sb3_env(i + start_index, seed, eval_env_settings) for i in range(num_eval_envs)])
-      else:
-          train_env = SubprocVecEnv([_make_sb3_env(i + start_index, seed, train_env_settings) for i in range(num_train_envs)], start_method=start_method)
-          start_index = num_train_envs
-          eval_env = SubprocVecEnv([_make_sb3_env(i + start_index, seed, eval_env_settings) for i in range(num_eval_envs)], start_method=start_method)
 
-  return train_env, eval_env
+    assert train_env_settings.action_space == eval_env_settings.action_space, "Train env and eval env action spsces not the same!"
+    is_discrete = train_env_settings.action_space == SpaceTypes.DISCRETE
+
+    # If not wanting vectorized envs
+    if no_vec and num_train_envs == 1 and num_eval_envs == 1:
+        train_env = _make_sb3_env(
+            rank=0,
+            seed=seed,
+            env_settings=train_env_settings,
+            characters=train_characters,
+            discrete=is_discrete,
+        )()
+        eval_env = _make_sb3_env(
+            rank=1,
+            seed=seed,
+            env_settings=eval_env_settings,
+            characters=eval_characters,
+            discrete=is_discrete,
+        )()
+    else:
+        # When using one environment, no need to start subprocesses
+        if (num_train_envs == 1 and num_eval_envs == 1) or not use_subprocess:
+            train_env = DummyVecEnv([_make_sb3_env(
+                rank=i + start_index,
+                seed=seed,
+                env_settings=train_env_settings,
+                characters=train_characters,
+                discrete=is_discrete,
+            ) for i in range(num_train_envs)])
+            start_index = num_train_envs
+            eval_env = DummyVecEnv([_make_sb3_env(
+                rank=i + start_index,
+                seed=seed,
+                env_settings=eval_env_settings,
+                characters=eval_characters,
+                discrete=is_discrete,
+            ) for i in range(num_eval_envs)])
+        else:
+            train_env = SubprocVecEnv([_make_sb3_env(
+                rank=i + start_index,
+                seed=seed,
+                env_settings=train_env_settings,
+                characters=train_characters,
+                discrete=is_discrete,
+            ) for i in range(num_train_envs)], start_method=start_method)
+            start_index = num_train_envs
+            eval_env = SubprocVecEnv([_make_sb3_env(
+                rank=i + start_index,
+                seed=seed,
+                env_settings=eval_env_settings,
+                characters=eval_characters,
+                discrete=is_discrete,
+            ) for i in range(num_eval_envs)], start_method=start_method)
+
+    train_env = VecTransposeImage(train_env)
+    eval_env = VecTransposeImage(eval_env)
+
+    set_global_seed(seed) # Set global seed
+    return train_env, eval_env

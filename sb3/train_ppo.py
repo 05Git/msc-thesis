@@ -138,20 +138,14 @@ def main(policy_cfg: str, settings_cfg: str, train_id: str | None, char_transfer
                 game_id=train_settings.game_id,
                 num_train_envs=num_train_envs,
                 num_eval_envs=num_eval_envs,
+                train_characters=train_characters,
+                eval_characters=eval_characters,
                 train_env_settings=train_settings,
                 eval_env_settings=eval_settings, 
                 wrappers_settings=wrappers_settings, 
                 seed=seed,
                 use_subprocess=True,
             )
-            if train_settings.action_space == SpaceTypes.DISCRETE:
-                train_env = custom_wrappers.VecEnvDiscreteTransferWrapper(train_env, stack_frames, characters=train_characters)
-                eval_env = custom_wrappers.VecEnvDiscreteTransferWrapper(eval_env, stack_frames, characters=eval_characters)
-            else:
-                train_env = custom_wrappers.VecEnvMDTransferWrapper(train_env, stack_frames, characters=train_characters)
-                eval_env = custom_wrappers.VecEnvMDTransferWrapper(eval_env, stack_frames, characters=eval_characters)
-            train_env = VecTransposeImage(train_env)
-            eval_env = VecTransposeImage(eval_env)
             print(f"\nOriginal action space: {train_env.unwrapped.action_space}")
             print(f"Wrapped action space: {train_env.action_space}")
             print("\nActivated {} environment(s)".format(num_eval_envs + num_train_envs))

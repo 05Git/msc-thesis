@@ -1,6 +1,6 @@
 folders:
   parent_dir: "ppo_agents"
-  model_name: "test"
+  model_name: "sf3_interleaved"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]

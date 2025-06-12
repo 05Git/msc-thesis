@@ -7,7 +7,7 @@ class VecEnvMDTransferWrapper(VecEnvWrapper):
     VectorEnv Multi-Discrete Transfer Wrapper
     Necessary for wrapping SubprocVecEnvs during distributed training
     '''
-    def __init__(self, venv: VecEnv, stack_frames: int, characters: list[str], no_move_idx: int = 0, no_attack_idx: int = 0):
+    def __init__(self, venv: VecEnv, stack_frames: int, no_move_idx: int = 0, no_attack_idx: int = 0):
         super().__init__(venv=venv)
         self.venv = venv
         self.valid_moves = venv.action_space.nvec[0]
@@ -20,8 +20,8 @@ class VecEnvMDTransferWrapper(VecEnvWrapper):
             self.image_space_keys = venv.unwrapped.image_space_keys
         else:
             self.image_space_keys = ["frame"]
-        self.characters = characters
-        self.char_queue = list(np.random.permutation(self.characters))
+        # self.characters = characters
+        # self.char_queue = list(np.random.permutation(self.characters))
 
     def reset(self) -> np.ndarray:
         obs = self.venv.reset()
@@ -89,7 +89,7 @@ class VecEnvDiscreteTransferWrapper(VecEnvWrapper):
         return obs["frame"], reward, done, info
 
 class MDTransferWrapper(gym.Wrapper):
-    def __init__(self, env, stack_frames: int, no_move_idx: int = 0, no_attack_idx: int = 0):
+    def __init__(self, env, stack_frames: int, characters: list[str], no_move_idx: int = 0, no_attack_idx: int = 0):
         super().__init__(env)
         self.env = env
         self.valid_moves = env.action_space.nvec[0]
@@ -98,14 +98,21 @@ class MDTransferWrapper(gym.Wrapper):
         self.no_move_idx = no_move_idx
         self.no_attack_idx = no_attack_idx
         self.observation_space = gym.spaces.Box(0, 255, (84, 84, stack_frames), np.uint8)
-        if hasattr(env, "image_space_keys"):
-            self.image_space_keys = env.unwrapped.image_space_keys
-        else:
+        self.characters = characters
+        self.char_queue = list(np.random.permutation(self.characters))
+        try:
+            self.image_space_keys = list(getattr(env.unwrapped, "image_space_keys", ["frame"]))
+        except Exception:
             self.image_space_keys = ["frame"]
 
     def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        return obs["frame"], info
+        episode_settings = {
+            "characters" : str(self.char_queue.pop(0))
+        }
+        if not len(self.char_queue) > 0:
+            self.char_queue = list(np.random.permutation(self.characters))
+        obs, info = self.env.reset(options=episode_settings, **kwargs)
+        return obs[self.image_space_keys[0]], info
 
     def step(self, action):
         '''
@@ -118,28 +125,35 @@ class MDTransferWrapper(gym.Wrapper):
         step_result = self.env.step([move, attack])
         # Unpack the step result depending on the API.
         if len(step_result) == 4:
-            obs, reward, done, info = step_result
-            trunc = False
+            obs, reward, terminated, info = step_result
+            truncated = False
         else:
-            obs, reward, done, trunc, info = step_result
-        return obs["frame"], reward, done, trunc, info
+            obs, reward, terminated, truncated, info = step_result
+        return obs[self.image_space_keys[0]], reward, terminated, truncated, info
 
 class DiscreteTransferWrapper(gym.Wrapper):
-    def __init__(self, env, stack_frames: int, no_op_idx: int = 0):
+    def __init__(self, env, stack_frames: int, characters: list[str], no_op_idx: int = 0):
         super().__init__(env)
         self.env = env
         self.valid_actions = env.action_space.n
         self.action_space = gym.spaces.Discrete(19) # 19 actions is the largest possible action space (kof)
         self.no_op_idx = no_op_idx
         self.observation_space = gym.spaces.Box(0, 255, (84, 84, stack_frames), np.uint8)
-        if hasattr(env, "image_space_keys"):
-            self.image_space_keys = env.unwrapped.image_space_keys
-        else:
+        self.characters = characters
+        self.char_queue = list(np.random.permutation(self.characters))
+        try:
+            self.image_space_keys = list(getattr(env.unwrapped, "image_space_keys", ["frame"]))
+        except Exception:
             self.image_space_keys = ["frame"]
 
     def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        return obs["frame"], info
+        episode_settings = {
+            "characters" : str(self.char_queue.pop(0))
+        }
+        if not len(self.char_queue) > 0:
+            self.char_queue = list(np.random.permutation(self.characters))
+        obs, info = self.env.reset(options=episode_settings, **kwargs)
+        return obs[self.image_space_keys[0]], info
 
     def step(self, action):
         '''
@@ -150,8 +164,8 @@ class DiscreteTransferWrapper(gym.Wrapper):
         step_result = self.env.step(action)
         # Unpack the step result depending on the API.
         if len(step_result) == 4:
-            obs, reward, done, info = step_result
-            trunc = False
+            obs, reward, terminated, info = step_result
+            truncated = False
         else:
-            obs, reward, done, trunc, info = step_result
-        return obs["frame"], reward, done, trunc, info
+            obs, reward, terminated, truncated, info = step_result
+        return obs[self.image_space_keys[0]], reward, terminated, truncated, info
