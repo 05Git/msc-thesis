@@ -67,8 +67,8 @@ def main(
     gamma = ppo_settings["gamma"]
     model_checkpoint = ppo_settings["model_checkpoint"]
     n_eval_episodes = ppo_settings["n_eval_episodes"]
-    learning_rate = linear_schedule(ppo_settings["learning_rate"][0], ppo_settings["learning_rate"][1]) if len(ppo_settings["learning_rate"]) > 1 else ppo_settings["learning_rate"]
-    clip_range = linear_schedule(ppo_settings["clip_range"][0], ppo_settings["clip_range"][1]) if len(ppo_settings["clip_range"]) > 1 else ppo_settings["clip_range"]
+    learning_rate = linear_schedule(ppo_settings["train_lr"][0], ppo_settings["train_lr"][1])
+    clip_range = linear_schedule(ppo_settings["train_cr"][0], ppo_settings["train_cr"][1])
     clip_range_vf = clip_range
     batch_size = ppo_settings["batch_size"]
     n_epochs = ppo_settings["n_epochs"]
@@ -164,6 +164,11 @@ def main(
             print(f"\nOriginal action space: {train_env.unwrapped.action_space}")
             print(f"Wrapped action space: {train_env.action_space}")
             print(f"\nActivated {num_eval_envs + num_train_envs} environment(s)")
+
+            # Finetuning settings
+            if epoch > 0:
+                learning_rate = linear_schedule(ppo_settings["finetune_lr"][0], ppo_settings["finetune_lr"][1])
+                clip_range = linear_schedule(ppo_settings["finetune_cr"][0], ppo_settings["finetune_cr"][1])
             
             # Load policy params if checkpoint exists, else make a new agent
             if int(model_checkpoint) > 0 and os.path.exists(checkpoint_path):
