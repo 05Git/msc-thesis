@@ -66,7 +66,7 @@ def make_sb3_envs(
             return env
         return _init
 
-    assert train_env_settings.action_space == eval_env_settings.action_space, "Train env and eval env action spsces not the same!"
+    assert train_env_settings.action_space == eval_env_settings.action_space, "Train env and eval env action spaces not the same!"
     is_discrete = train_env_settings.action_space == SpaceTypes.DISCRETE
 
     # If not wanting vectorized envs

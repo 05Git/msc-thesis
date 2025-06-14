@@ -20,8 +20,6 @@ class VecEnvMDTransferWrapper(VecEnvWrapper):
             self.image_space_keys = venv.unwrapped.image_space_keys
         else:
             self.image_space_keys = ["frame"]
-        # self.characters = characters
-        # self.char_queue = list(np.random.permutation(self.characters))
 
     def reset(self) -> np.ndarray:
         obs = self.venv.reset()
@@ -41,15 +39,6 @@ class VecEnvMDTransferWrapper(VecEnvWrapper):
 
     def step_wait(self):
         obs, reward, dones, info = self.venv.step_wait()
-        if np.any(dones):
-            for i, done in enumerate(dones):
-                if done:
-                    episode_settings = {
-                        "characters" : str(self.char_queue.pop(0))
-                    }
-                    if not len(self.char_queue) > 0:
-                        self.char_queue = list(np.random.permutation(self.characters))
-                    obs[i] = self.venv.env_method("reset", indices=i, options=episode_settings)[0]
         return obs[self.image_space_keys[0]], reward, dones, info
 
 class VecEnvDiscreteTransferWrapper(VecEnvWrapper):
@@ -71,7 +60,7 @@ class VecEnvDiscreteTransferWrapper(VecEnvWrapper):
 
     def reset(self) -> np.ndarray:
         obs = self.venv.reset()
-        return obs["frame"]
+        return obs[self.image_space_keys[0]]
 
     def step_async(self, actions: np.ndarray) -> None:
         '''
@@ -86,7 +75,7 @@ class VecEnvDiscreteTransferWrapper(VecEnvWrapper):
 
     def step_wait(self):
         obs, reward, done, info = self.venv.step_wait()
-        return obs["frame"], reward, done, info
+        return obs[self.image_space_keys[0]], reward, done, info
 
 class MDTransferWrapper(gym.Wrapper):
     def __init__(self, env, stack_frames: int, characters: list[str], no_move_idx: int = 0, no_attack_idx: int = 0):
@@ -106,8 +95,13 @@ class MDTransferWrapper(gym.Wrapper):
             self.image_space_keys = ["frame"]
 
     def reset(self, **kwargs):
+        # Making this work with tuples of characters for KOF -_-
+        next_characters = str(self.char_queue.pop(0)).split()
+        next_characters = tuple(s.translate({ord(i): None for i in "[]'"}) for s in next_characters)
+        if len(next_characters) == 2: # Some characters in MK3 have two names instead of just one, ugh
+            next_characters = " ".join(next_characters)
         episode_settings = {
-            "characters" : str(self.char_queue.pop(0))
+            "characters" : next_characters
         }
         if not len(self.char_queue) > 0:
             self.char_queue = list(np.random.permutation(self.characters))

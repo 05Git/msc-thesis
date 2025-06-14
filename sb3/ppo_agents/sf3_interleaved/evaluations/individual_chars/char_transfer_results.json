@@ -1,0 +1,36 @@
+{
+    "0": {
+        "Model: sb3/ppo_agents/sf3_interleaved/model/seed_0/char_transfer/9000000.zip, Characters: ['Ryu']": {
+            "mean_reward": 3.0285973229166667,
+            "std_reward": 1.285268342204342,
+            "mean_stages": 3.489583333333333,
+            "std_stages": 0.4591611841777957,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        },
+        "Model: sb3/ppo_agents/sf3_interleaved/model/seed_0/char_transfer/9000000.zip, Characters: ['Urien']": {
+            "mean_reward": 1.3141821979166666,
+            "std_reward": 0.911143048503735,
+            "mean_stages": 2.34375,
+            "std_stages": 0.3521696146745202,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        },
+        "Model: sb3/ppo_agents/sf3_interleaved/model/seed_0/char_transfer/9000000.zip, Characters: ['Makoto']": {
+            "mean_reward": 2.004076114583333,
+            "std_reward": 1.1644298862889662,
+            "mean_stages": 3.072916666666667,
+            "std_stages": 0.2714336295999038,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        },
+        "Model: sb3/ppo_agents/sf3_interleaved/model/seed_0/char_transfer/9000000.zip, Characters: ['Hugo']": {
+            "mean_reward": 2.6666019687499998,
+            "std_reward": 1.3272512285314872,
+            "mean_stages": 3.59375,
+            "std_stages": 0.680121389287726,
+            "mean_arcade_runs": 0.0,
+            "std_arcade_runs": 0.0
+        }
+    }
+}
