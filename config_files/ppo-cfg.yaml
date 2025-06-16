@@ -1,6 +1,6 @@
 folders:
   parent_dir: "final"
-  model_name: "sf3_interleaved"
+  model_name: "sf3_sequential"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -19,8 +19,8 @@ ppo_settings:
   n_steps: 128
   autosave_freq: 1_000_000
   eval_freq: 1_000_000
-  time_steps: 10_000_000
-  n_eval_episodes: 25
+  time_steps: 2_500_000
+  n_eval_episodes: 1
   seeds: !!python/tuple [ 0 ]
 
   gae_lambda: 0.95

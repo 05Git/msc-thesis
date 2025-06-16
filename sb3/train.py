@@ -104,11 +104,10 @@ def main(
     if train_id:
         game_settings = settings_params["settings"][train_id]
         if train_type == "sequential":
-            assert len(game_settings["characters"]["train"]) == len(game_settings["characters"]["eval"]), "Error: For sequential training, length of train and eval character arrays must be the same. Mismatch between these two array lengths was detected."
             characters_list = game_settings["characters"].copy()
             for i in range(len(characters_list["train"])):
                 game_settings["characters"]["train"] = [characters_list["train"][i]]
-                game_settings["characters"]["eval"] = [characters_list["eval"][i]]
+                game_settings["characters"]["eval"] = characters_list["eval"]
                 env_settings.update(game_settings)
                 envs_settings.append(copy.deepcopy(env_settings))
         else:
@@ -118,11 +117,10 @@ def main(
         for game_id in game_ids:
             game_settings = settings_params["settings"][game_id]
             if train_type == "sequential":
-                assert len(game_settings["characters"]["train"]) == len(game_settings["characters"]["eval"]), "Error: For sequential training, length of train and eval character arrays must be the same. Mismatch between these two array lengths was detected."
                 characters_list = game_settings["characters"].copy()
                 for i in range(len(characters_list["train"])):
                     game_settings["characters"]["train"] = [characters_list["train"][i]]
-                    game_settings["characters"]["eval"] = [characters_list["eval"][i]]
+                    game_settings["characters"]["eval"] = characters_list["eval"]
                     env_settings.update(game_settings)
                     envs_settings.append(copy.deepcopy(env_settings))
             else:
