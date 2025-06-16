@@ -60,7 +60,6 @@ def main(
     )
     os.makedirs(model_folder, exist_ok=True)
 
-
     # PPO settings
     ppo_settings = policy_params["ppo_settings"]
     policy = ppo_settings["policy_type"]

@@ -377,8 +377,6 @@ class ArcadeMetricsEvalCallback(EventCallback):
             if self.log_path is not None:
                 assert isinstance(episode_rewards, list)
                 assert isinstance(episode_lengths, list)
-                assert isinstance(stages_completed, list)
-                assert isinstance(arcade_runs_completed, list)
                 self.evaluations_timesteps.append(self.num_timesteps)
                 self.evaluations_results.append(episode_rewards)
                 self.evaluations_length.append(episode_lengths)
