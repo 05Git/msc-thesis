@@ -272,6 +272,7 @@ class ArcadeMetricsEvalCallback(EventCallback):
         render: bool = False,
         verbose: int = 1,
         warn: bool = True,
+        episode_num: int | None = None,
     ):
         super().__init__(callback_after_eval, verbose=verbose)
 
@@ -294,9 +295,15 @@ class ArcadeMetricsEvalCallback(EventCallback):
 
         self.eval_env = eval_env
         self.best_model_save_path = best_model_save_path
+        ##########################################################################################
         # Logs will be written in ``evaluations.npz``
+        # If more than one training episode (e.g. during sequential training), then
+        # episode number is appended to file name to prevent old evaluation data from
+        # being overwritten
         if log_path is not None:
-            log_path = os.path.join(log_path, "evaluations")
+            file_name = f"evaluations_{episode_num}" if episode_num is not None else "evaluations"
+            log_path = os.path.join(log_path, file_name)
+        ##########################################################################################
         self.log_path = log_path
         self.evaluations_results: list[list[float]] = []
         self.evaluations_timesteps: list[int] = []
@@ -310,6 +317,11 @@ class ArcadeMetricsEvalCallback(EventCallback):
         self.stages_comp: list[list[float]] = []
         self.arcade_runs_comp: list[list[float]] = []
         #############################################
+        
+        ###############################################################################################
+        # Ensure subsequent episodes don't overwrite best models from previous episodes               #
+        self.model_save_name = f"{episode_num}_best_model" if episode_num is not None else "best_model"
+        ###############################################################################################
 
     def _init_callback(self) -> None:
         # Does not work in some corner cases, where the wrapper is not the same
@@ -363,8 +375,8 @@ class ArcadeMetricsEvalCallback(EventCallback):
             ################################################################################################################
             # Use cutom evaluation function to return arcade metrics                                                       #
             episode_rewards, episode_lengths, stages_completed, arcade_runs_completed = evaluate_policy_with_arcade_metrics(
-                self.model,
-                self.eval_env,
+                model=self.model,
+                env=self.eval_env,
                 n_eval_episodes=self.n_eval_episodes,
                 render=self.render,
                 deterministic=self.deterministic,
@@ -393,12 +405,14 @@ class ArcadeMetricsEvalCallback(EventCallback):
                     kwargs = dict(successes=self.evaluations_successes)
 
                 np.savez(
-                    self.log_path,
+                    file=self.log_path,
                     timesteps=self.evaluations_timesteps,
                     results=self.evaluations_results,
                     ep_lengths=self.evaluations_length,
-                    stages=stages_completed,
-                    arcade_runs=arcade_runs_completed,
+                    ##################################
+                    stages=self.stages_comp,
+                    arcade_runs=self.arcade_runs_comp,
+                    ##################################
                     **kwargs,  # type: ignore[arg-type]
                 )
 
@@ -443,7 +457,10 @@ class ArcadeMetricsEvalCallback(EventCallback):
                 if self.verbose >= 1:
                     print("New best mean reward!")
                 if self.best_model_save_path is not None:
-                    self.model.save(os.path.join(self.best_model_save_path, "best_model"))
+                    ##############################################################################
+                    # Use self.model_save_name instead of just "best_model"                      #
+                    self.model.save(os.path.join(self.best_model_save_path, self.model_save_name))
+                    ##############################################################################
                 self.best_mean_reward = float(mean_reward)
                 # Trigger callback on new best model, if needed
                 if self.callback_on_new_best is not None:

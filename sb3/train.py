@@ -126,7 +126,10 @@ def main(
             else:
                 env_settings.update(game_settings)
                 envs_settings.append(copy.deepcopy(env_settings))
-    
+
+    # For saving evals to npx file without overwriitng old data
+    more_than_one_episode = len(envs_settings) > 1
+
     for seed in seeds:
         utils.set_global_seed(seed)
         save_path = os.path.join(model_folder, f"seed_{seed}")
@@ -162,14 +165,14 @@ def main(
             print(f"Wrapped action space: {train_env.action_space}")
             print(f"\nActivated {num_eval_envs + num_train_envs} environment(s)")
 
-            # Finetuning settings
-            if epoch > 0:
+            # Load policy params if checkpoint exists, else make a new agent
+            if int(model_checkpoint) > 0 and os.path.isfile(checkpoint_path + ".zip"):
+                # Finetune settings
                 learning_rate = linear_schedule(ppo_settings["finetune_lr"][0], ppo_settings["finetune_lr"][1])
                 clip_range = linear_schedule(ppo_settings["finetune_cr"][0], ppo_settings["finetune_cr"][1])
-            
-            # Load policy params if checkpoint exists, else make a new agent
-            if int(model_checkpoint) > 0 and os.path.exists(checkpoint_path):
-                print("\n Checkpoint found, loading model.")
+                clip_range_vf = clip_range
+
+                print("\nCheckpoint found, loading model.")
                 agent = PPO.load(
                     path=checkpoint_path,
                     env=train_env,
@@ -236,6 +239,7 @@ def main(
                 render=False,
                 # callback_after_eval=stop_training,
                 verbose=1,
+                episode_num=epoch if more_than_one_episode else None,
             )
             callback_list = CallbackList([auto_save_callback, arcade_metrics_callback, eval_callback])
 
