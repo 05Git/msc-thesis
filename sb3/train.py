@@ -27,14 +27,14 @@ def main(
     # Game IDs
     game_ids = [
         "sfiii3n",
+        "samsh5sp",
         "kof98umh",
         "umk3",
-        "samsh5sp",
     ]
     assert train_id in game_ids or not train_id, f"Invalid game id ({train_id}), available ids: [{game_ids}]"
 
     # Device
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Read the cfg files
     policy_file = open(policy_cfg)
@@ -64,7 +64,6 @@ def main(
     ppo_settings = policy_params["ppo_settings"]
     policy = ppo_settings["policy_type"]
     gamma = ppo_settings["gamma"]
-    model_checkpoint = ppo_settings["model_checkpoint"]
     n_eval_episodes = ppo_settings["n_eval_episodes"]
     learning_rate = linear_schedule(ppo_settings["train_lr"][0], ppo_settings["train_lr"][1])
     clip_range = linear_schedule(ppo_settings["train_cr"][0], ppo_settings["train_cr"][1])
@@ -131,11 +130,11 @@ def main(
     more_than_one_episode = len(envs_settings) > 1
 
     for seed in seeds:
-        utils.set_global_seed(seed)
         save_path = os.path.join(model_folder, f"seed_{seed}")
-        checkpoint_path = os.path.join(save_path, model_checkpoint)
+        model_checkpoint = ppo_settings["model_checkpoint"]
         
         for epoch in range(len(envs_settings)):
+            checkpoint_path = os.path.join(save_path, model_checkpoint)
             # Set up separate settings for train and evaluation envs
             train_settings = envs_settings[epoch].copy()
             train_settings["characters"] = train_settings["characters"]["train"]
@@ -249,7 +248,6 @@ def main(
                     callback=callback_list,
                     reset_num_timesteps=True,
                     progress_bar=True,
-                    # tb_log_name=f"{train_settings.game_id}",
                 )
             except KeyboardInterrupt:
                 print("Training interrupted. Saving model before exiting.")

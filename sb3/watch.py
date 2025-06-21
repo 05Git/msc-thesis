@@ -13,10 +13,9 @@ import utils
 
 # diambra run -g python sb3/watch.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
 
-def main(policy_cfg: str, settings_cfg: str, game_id: str):
+def main(policy_cfg: str, settings_cfg: str, game_id: str, agent_path: str | None):
     # Device
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Read the cfg files
     policy_file = open(policy_cfg)
@@ -44,7 +43,7 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
     settings["step_ratio"] = 1
     game_settings = settings_params["settings"][game_id]
     # game_settings["characters"] = game_settings["characters"]["train"][0]
-    game_settings["characters"] = "Urien"
+    game_settings["characters"] = "Ryu"
     settings.update(game_settings)
     settings = load_settings_flat_dict(EnvironmentSettings, settings)
     seed = policy_params['ppo_settings']['seeds'][0]
@@ -71,7 +70,11 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
         policy_kwargs = {}
 
     agent = PPO.load(
-        path="sb3/final/sf3_sequential_with_finetuning/model/seed_0/7500000.zip",
+        path=agent_path if agent_path is not None else os.path.join(
+            model_folder,
+            f"seed_{seed}",
+            policy_params["ppo_settings"]["model_checkpoint"]
+        ),
         env=env,
         device=device,
         policy_kwargs=policy_kwargs,
@@ -80,34 +83,20 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str):
             "observation_space" : env.observation_space,
         }
     )
-    # agent = PPO.load(
-    #     path=os.path.join(
-    #         model_folder,
-    #         f"seed_{seed}",
-    #         policy_params["ppo_settings"]["model_checkpoint"]
-    #     ),
-    #     env=env,
-    #     device=device,
-    #     policy_kwargs=policy_kwargs,
-    #     custom_objects={
-    #         "action_space" : env.action_space,
-    #         "observation_space" : env.observation_space,
-    #     }
-    # )
 
     obs = env.reset()
     while True:
         action, _ = agent.predict(obs, deterministic=True)
-    #     if settings.action_space == SpaceTypes.DISCRETE:
-    #         action = int(action)
+        #if settings.action_space == SpaceTypes.DISCRETE:
+        #    action = int(action)
         # print(f"Action: {action}")
         obs, rew, done, info = env.step(action)
         # print(type(info))
         # print(f"Observation: {obs}")
         # print(f"Reward: {rew}")
         # print(f"Dones: {dones}")
-        print(f"Info: {info}")
-        break
+        # print(f"Info: {info}")
+        
         if done:
             break
     env.close()
@@ -119,6 +108,7 @@ if __name__ == '__main__':
     parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
     parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
     parser.add_argument("--gameID", type=str, required=False, help="Specific game to evaluate", default="sfiii3n")
+    parser.add_argument("--agentPath", type=str, required=False, help="Path to pre-trained agent", default=None)
     opt = parser.parse_args()
 
-    main(opt.policyCfg, opt.settingsCfg, opt.gameID)
+    main(opt.policyCfg, opt.settingsCfg, opt.gameID, opt.agentPath)

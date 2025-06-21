@@ -1,0 +1,32 @@
+{
+    "0": {
+        "before_imitation": {
+            "eval_reward": {
+                "mean": -1.23341615,
+                "std": 0.45689228360720596
+            },
+            "eval_stages": {
+                "mean": 0.019230769230769232,
+                "std": 0.03330866937632457
+            },
+            "eval_arcade_runs": {
+                "mean": 0.0,
+                "std": 0.0
+            }
+        },
+        "after_imitation": {
+            "eval_reward": {
+                "mean": -1.8841614399999997,
+                "std": 0.21830755178089095
+            },
+            "eval_stages": {
+                "mean": 0.0,
+                "std": 0.0
+            },
+            "eval_arcade_runs": {
+                "mean": 0.0,
+                "std": 0.0
+            }
+        }
+    }
+}

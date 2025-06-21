@@ -7,7 +7,7 @@ import cv2
 import tempfile
 
 from diambra.arena import load_settings_flat_dict, SpaceTypes
-from diambra.arena.stable_baselines3.make_sb3_env import EnvironmentSettings, WrappersSettings
+from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 
 import torch
@@ -31,7 +31,7 @@ import utils
 
 # diambra run -s 12 python sb3/train_ppo_imitation.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --datasetPath _ --trainID _ --charTransfer _
 
-def get_transitions(data_loader: DiambraDataLoader):
+def get_transitions(data_loader: DiambraDataLoader, agent_num: int | None):
     n_episodes = len(data_loader.episode_files) # Number of datasets
     trajectories = []
     for i in range(n_episodes):
@@ -48,7 +48,10 @@ def get_transitions(data_loader: DiambraDataLoader):
         obs = np.stack([obs[i:i+4] for i in range(len(obs) - 3)], axis=0) # Stack frames together, this is what the policy expects as input
         last_frame_stack = np.stack([obs[-1]] * 4)
         obs = np.concatenate([obs, last_frame_stack], axis=0) # Concat 4 extra frame stacks to match trajectory's required shape
-        acts = np.array([data["action"] for data in data_loader.episode_data], dtype=np.uint8)
+        if agent_num is not None:
+            acts = np.array([data["action"][f"agent_{agent_num}"] for data in data_loader.episode_data], dtype=np.uint8)
+        else:
+            acts = np.array([data["action"] for data in data_loader.episode_data], dtype=np.uint8)
         rews = np.array([data["reward"] for data in data_loader.episode_data], dtype=np.float16)
         dones = np.array([data["terminated"] for data in data_loader.episode_data])
         terminal = np.any(dones) # Does this episode end in a terminal state?
@@ -65,7 +68,15 @@ def get_transitions(data_loader: DiambraDataLoader):
     
     return rollout.flatten_trajectories_with_rew(trajectories)
 
-def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: str | None, char_transfer: bool, num_train_envs: int, num_eval_envs: int):
+def main(
+    policy_cfg: str, 
+    settings_cfg: str,
+    dataset_path_input: str, 
+    train_id: str | None, 
+    num_train_envs: int, 
+    num_eval_envs: int,
+    agent_num: int | None,
+):
     # Game IDs
     game_ids = [
         "sfiii3n",
@@ -73,9 +84,7 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         "umk3",
         "samsh5sp"
     ]
-    
-    if train_id not in game_ids:
-        train_id = game_ids[0]
+    assert train_id in game_ids or not train_id, f"Invalid game id ({train_id}), available ids: [{game_ids}]"
 
     if dataset_path_input is not None:
         dataset_path = dataset_path_input
@@ -84,7 +93,7 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         dataset_path = os.path.join(base_path, "dataset")
 
     # Device
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Read the cfg files
     policy_file = open(policy_cfg)
@@ -110,19 +119,21 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
     )
     os.makedirs(model_folder, exist_ok=True)
 
+    # Check if we're training with training mode
+    is_multi_agent = agent_num is not None
+
     # Set up imitation transitions
     imitation_data_loader = DiambraDataLoader(dataset_path)
-    transitions = get_transitions(imitation_data_loader)
-    print("transitions loaded")
+    transitions = get_transitions(imitation_data_loader, agent_num=agent_num)
+    print("\nTransitions loaded")
 
-    # PPO settings
+     # PPO settings
     ppo_settings = policy_params["ppo_settings"]
     policy = ppo_settings["policy_type"]
     gamma = ppo_settings["gamma"]
-    model_checkpoint = ppo_settings["model_checkpoint"]
     n_eval_episodes = ppo_settings["n_eval_episodes"]
-    learning_rate = linear_schedule(ppo_settings["learning_rate"][0], ppo_settings["learning_rate"][1])
-    clip_range = linear_schedule(ppo_settings["clip_range"][0], ppo_settings["clip_range"][1])
+    learning_rate = linear_schedule(ppo_settings["finetune_lr"][0], ppo_settings["finetune_lr"][1])
+    clip_range = linear_schedule(ppo_settings["finetune_cr"][0], ppo_settings["finetune_cr"][1])
     clip_range_vf = clip_range
     batch_size = ppo_settings["batch_size"]
     n_epochs = ppo_settings["n_epochs"]
@@ -152,50 +163,58 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
     n_imitation_steps = imitation_settings["n_imitation_steps"]
 
     # Load wrappers settings as dictionary
+    wrappers_settings = settings_params["wrappers_settings"]
+    if is_multi_agent:
+        wrappers_settings["role_relative"] = False
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
-    stack_frames = settings_params["wrappers_settings"]["stack_frames"]
     # Load shared settings
     settings = settings_params["settings"]["shared"]
     # Set action space type
     settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
-
     # Load game specific settings
     game_settings = settings_params["settings"][train_id]
-    game_settings["characters"] = game_settings["characters"][0]
+    train_characters = game_settings["characters"]["train"]
+    eval_characters = game_settings["characters"]["eval"]
+    game_settings["characters"] = game_settings["characters"]["train"][0]
+    if is_multi_agent:
+        settings["action_space"] = (settings["action_space"], settings["action_space"])
+        settings["outfits"] = (settings["outfits"], settings["outfits"])
+        game_settings["characters"] = (game_settings["characters"][0], game_settings["characters"][1])
+        if train_id == "sfiii3n":
+            game_settings["super_art"] = (game_settings["super_art"], game_settings["super_art"])
+        if train_id == "kof98umh":
+            game_settings["fighting_style"] = (game_settings["fighting_style"], game_settings["fighting_style"])
+            game_settings["ultimate_style"] = (game_settings["ultimate_style"], game_settings["ultimate_style"])
     settings.update(game_settings)
-    settings = load_settings_flat_dict(EnvironmentSettings, settings)
-    "settings loaded"
+    settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, settings) if is_multi_agent else load_settings_flat_dict(EnvironmentSettings, settings)
     
     eval_results = {}
     for seed in seeds:
+        model_checkpoint = ppo_settings["model_checkpoint"]
+        save_path = os.path.join(model_folder, f"seed_{seed}")
         eval_results.update({seed: {}})
-        utils.set_global_seed(seed)
 
         # Initialise envs and wrap in transfer wrappers
         train_env, eval_env = utils.make_sb3_envs(
             game_id=settings.game_id,
             num_train_envs=num_train_envs,
             num_eval_envs=num_eval_envs,
-            env_settings=settings, 
+            train_characters=train_characters,
+            eval_characters=eval_characters,
+            multi_agent=is_multi_agent,
+            train_env_settings=settings,
+            eval_env_settings=settings, 
             wrappers_settings=wrappers_settings, 
             seed=seed,
             use_subprocess=True,
         )
-        if settings.action_space == SpaceTypes.DISCRETE:
-            train_env = custom_wrappers.VecEnvDiscreteTransferWrapper(train_env, stack_frames)
-            eval_env = custom_wrappers.VecEnvDiscreteTransferWrapper(eval_env, stack_frames)
-        else:
-            train_env = custom_wrappers.VecEnvMDTransferWrapper(train_env, stack_frames)
-            eval_env = custom_wrappers.VecEnvMDTransferWrapper(eval_env, stack_frames)
-        train_env = VecTransposeImage(train_env)
-        eval_env = VecTransposeImage(eval_env)
         print(f"\nOriginal action space: {train_env.unwrapped.action_space}")
         print(f"Wrapped action space: {train_env.action_space}")
         print("\nActivated {} environment(s)".format(num_eval_envs + num_train_envs))
 
         # Load policy params if checkpoint exists, else make a new agent
         checkpoint_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
-        if int(model_checkpoint) > 0 and os.path.exists(checkpoint_path):
+        if int(model_checkpoint) > 0 and os.path.isfile(checkpoint_path + ".zip"):
             print("\n Checkpoint found, loading model.")
             agent = PPO.load(
                 checkpoint_path,
@@ -265,7 +284,7 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         #     reward_net=reward_net,
         #     custom_logger=imit_log,
         # )
-
+        
         # Train behavioural clone trainer on transitions
         bc_trainer = bc.BC(
             observation_space=train_env.observation_space,
@@ -278,20 +297,20 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         )
 
         # Evaluate before imitation training
-        reward_info, stage_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
-            model=agent,
-            env=eval_env,
-            n_eval_episodes=n_eval_episodes * num_eval_envs,
-            deterministic=True,
-            render=False,
-        )
-        mean_reward_before, std_reward_before = reward_info
-        mean_stages_before, std_stages_before = stage_info
-        mean_arcades_before, std_arcades_before = arcade_info
+        # reward_info, stage_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
+        #     model=agent,
+        #     env=train_env,
+        #     n_eval_episodes=n_eval_episodes * num_eval_envs,
+        #     deterministic=True,
+        #     render=False,
+        # )
+        # mean_reward_before, std_reward_before = reward_info
+        # mean_stages_before, std_stages_before = stage_info
+        # mean_arcades_before, std_arcades_before = arcade_info
 
         # Imitation training
         # gail_trainer.train(n_imitation_steps, callback=None)
-        bc_trainer.train(n_epochs=max_imitation_epochs)
+        # bc_trainer.train(n_epochs=max_imitation_epochs)
 
         # DAgger training
         # with tempfile.TemporaryDirectory(prefix="dagger_example_") as tmpdir:
@@ -307,44 +326,45 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         #     dagger_trainer.train(n_imitation_steps)
 
         # Save imitated policy
-        imitation_folder = os.path.join(model_folder, f"seed_{seed}", "bc_trainer")
-        agent.policy = bc_trainer.policy
-        agent.save(os.path.join(imitation_folder, "bc_agent_policy"))
+        # imitation_folder = os.path.join(model_folder, f"seed_{seed}", "bc_trainer")
+        # agent.policy = bc_trainer.policy
+        # agent.save(os.path.join(imitation_folder, "bc_agent_policy"))
 
         # Eval imitation agent
-        reward_info, stage_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
-            model=agent,
-            env=eval_env,
-            n_eval_episodes=n_eval_episodes * num_eval_envs,
-            deterministic=True,
-            render=False,
-        )
-        mean_reward_after, std_reward_after = reward_info
-        mean_stages_after, std_stages_after = stage_info
-        mean_arcades_after, std_arcades_after = arcade_info
+        # reward_info, stage_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
+        #     model=agent,
+        #     env=train_env,
+        #     n_eval_episodes=n_eval_episodes * num_eval_envs,
+        #     deterministic=True,
+        #     render=False,
+        # )
+        # mean_reward_after, std_reward_after = reward_info
+        # mean_stages_after, std_stages_after = stage_info
+        # mean_arcades_after, std_arcades_after = arcade_info
 
-        # Create the callback: autosave every few steps
+        # Create callback list: track average number of stages and arcade runs completed, evaluate and autosave at regular intervals
         auto_save_callback = AutoSave(
             check_freq=autosave_freq,
             num_envs=num_train_envs,
-            save_path=os.path.join(model_folder, f"seed_{seed}"),
+            save_path=save_path,
             filename_prefix=model_checkpoint + "_"
         )
-        diambra_eval_callback = custom_callbacks.DiambraEvalCallback(verbose=0)
+        arcade_metrics_callback = custom_callbacks.ArcadeMetricsTrainCallback(verbose=0)
         stop_training = StopTrainingOnNoModelImprovement(max_no_improvement_evals=3, min_evals=5, verbose=1)
-        eval_callback = EvalCallback(
+        eval_callback = custom_callbacks.ArcadeMetricsEvalCallback(
             eval_env=eval_env,
             n_eval_episodes=n_eval_episodes * num_eval_envs, # Ensure each env completes required num of eval episodes
-            eval_freq=eval_freq // num_train_envs,
-            log_path=os.path.join(model_folder, f"seed_{seed}"),
-            best_model_save_path=os.path.join(model_folder, f"seed_{seed}"),
+            eval_freq=max(eval_freq // num_train_envs, 1),
+            log_path=save_path,
+            best_model_save_path=save_path,
             deterministic=True,
             render=False,
-            callback_after_eval=stop_training,
+            # callback_after_eval=stop_training,
             verbose=1,
+            episode_num=None,
         )
-        callback_list = CallbackList([auto_save_callback, diambra_eval_callback, eval_callback])
-
+        callback_list = CallbackList([auto_save_callback, arcade_metrics_callback, eval_callback])
+        
         try:
             agent.learn(
                 total_timesteps=time_steps,
@@ -359,7 +379,7 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         model_checkpoint = str(int(model_checkpoint) + time_steps)
         model_path = os.path.join(model_folder, f"seed_{seed}", model_checkpoint)
         agent.save(model_path)
-
+        """
         # Evaluate finetuned policy
         reward_info, stage_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
             model=agent,
@@ -371,53 +391,53 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         mean_reward_final, std_reward_final = reward_info
         mean_stages_final, std_stages_final = stage_info
         mean_arcades_final, std_arcades_final = arcade_info
-
+        """
         train_env.close()
         eval_env.close()
 
         eval_results[seed].update({
-            "before_imitation" : {
-                "eval_reward" : {
-                    "mean" : mean_reward_before,
-                    "std" : std_reward_before,
-                },
-                "eval_stages" : {
-                    "mean" : mean_stages_before,
-                    "std" : std_stages_before,
-                },
-                "eval_arcade_runs" : {
-                    "mean" : mean_arcades_before,
-                    "std" : std_arcades_before,
-                },
-            },
-            "after_imitation" : {
-                "eval_reward" : {
-                    "mean" : mean_reward_after,
-                    "std" : std_reward_after,
-                },
-                "eval_stages" : {
-                    "mean" : mean_stages_after,
-                    "std" : std_stages_after,
-                },
-                "eval_arcade_runs" : {
-                    "mean" : mean_arcades_after,
-                    "std" : std_arcades_after,
-                },
-            },
-            "after_training" : {
-                "eval_reward" : {
-                    "mean" : mean_reward_final,
-                    "std" : std_reward_final,
-                },
-                "eval_stages" : {
-                    "mean" : mean_stages_final,
-                    "std" : std_stages_final,
-                },
-                "eval_arcade_runs" : {
-                    "mean" : mean_arcades_final,
-                    "std" : std_arcades_final,
-                },
-            }
+            # "before_imitation" : {
+            #     "eval_reward" : {
+            #         "mean" : mean_reward_before,
+            #         "std" : std_reward_before,
+            #     },
+            #     "eval_stages" : {
+            #         "mean" : mean_stages_before,
+            #         "std" : std_stages_before,
+            #     },
+            #     "eval_arcade_runs" : {
+            #         "mean" : mean_arcades_before,
+            #         "std" : std_arcades_before,
+            #     },
+            # },
+            # "after_imitation" : {
+            #     "eval_reward" : {
+            #         "mean" : mean_reward_after,
+            #         "std" : std_reward_after,
+            #     },
+            #     "eval_stages" : {
+            #         "mean" : mean_stages_after,
+            #         "std" : std_stages_after,
+            #     },
+            #     "eval_arcade_runs" : {
+            #         "mean" : mean_arcades_after,
+            #         "std" : std_arcades_after,
+            #     },
+            # },
+            # "after_training" : {
+            #     "eval_reward" : {
+            #         "mean" : mean_reward_final,
+            #         "std" : std_reward_final,
+            #     },
+            #     "eval_stages" : {
+            #         "mean" : mean_stages_final,
+            #         "std" : std_stages_final,
+            #     },
+            #     "eval_arcade_runs" : {
+            #         "mean" : mean_arcades_final,
+            #         "std" : std_arcades_final,
+            #     },
+            # }
         })
 
     # Save evaluation results
@@ -428,28 +448,28 @@ def main(policy_cfg: str, settings_cfg: str, dataset_path_input: str, train_id: 
         "model",
         "training_results.json"
     )
-    with open(file_path, "w") as f:
-        json.dump(eval_results, f, indent=4)
+    # with open(file_path, "w") as f:
+    #     json.dump(eval_results, f, indent=4)
 
     return 0
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/transfer-cfg-ppo.yaml")
-    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
-    parser.add_argument("--datasetPath", type=str, required=False, help="Path to imitation trajectories", default="sb3/recordings/human/episode_recording/sfiii3n/multi_discrete")
-    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default="sfiii3n")
-    parser.add_argument('--charTransfer', action=argparse.BooleanOptionalAction, required=False, help="Evaluate character transfer or not", default=False)
-    parser.add_argument('--numTrainEnvs', type=int, required=False, help="Number of training environments", default=8)
-    parser.add_argument('--numEvalEnvs', type=int, required=False, help="Number of evaluation environments", default=4)
+    parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
+    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
+    parser.add_argument("--datasetPath", type=str, required=True, help="Path to imitation trajectories")
+    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default=None)
+    parser.add_argument("--numTrainEnvs", type=int, required=False, help="Number of training environments", default=8)
+    parser.add_argument("--numEvalEnvs", type=int, required=False, help="Number of evaluation environments", default=4)
+    parser.add_argument("--agentNum", type=int, required=False, help="Agent number (if trajectories come from multiagent env)", default=None)
     opt = parser.parse_args()
 
     main(
-        opt.policyCfg,
-        opt.settingsCfg, 
-        opt.datasetPath, 
-        opt.trainID, 
-        opt.charTransfer,
-        opt.numTrainEnvs,
-        opt.numEvalEnvs,
+        policy_cfg=opt.policyCfg,
+        settings_cfg=opt.settingsCfg,
+        dataset_path_input=opt.datasetPath,
+        train_id=opt.trainID,
+        num_train_envs=opt.numTrainEnvs,
+        num_eval_envs=opt.numEvalEnvs,
+        agent_num=opt.agentNum
     )

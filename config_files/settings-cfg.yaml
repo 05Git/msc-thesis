@@ -24,7 +24,7 @@ settings:
   sfiii3n:
     game_id: "sfiii3n"
     characters: 
-      train: [ "Ryu", "Urien", "Makoto", "Hugo" ]
+      train: [ "Ryu" ]
       eval: [ "Ken", "Alex", "Yang" ]
     difficulty: 1
     super_art: 1
@@ -41,7 +41,7 @@ settings:
       eval: [
         !!python/tuple [ "Joe", "Andy", "Geese" ],
         !!python/tuple [ "Vice", "Ralf", "Chris" ],
-        !!python/tuple [ "Ryu", "King", "Yashiro" ],
+        !!python/tuple [ "Ryo", "King", "Yashiro" ],
       ]
     difficulty: 1
     fighting_style: 1

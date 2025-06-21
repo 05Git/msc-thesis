@@ -28,7 +28,7 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     ]
 
     # Device
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Read the cfg files
     policy_file = open(policy_cfg)
