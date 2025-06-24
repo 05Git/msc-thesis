@@ -9,13 +9,13 @@ import tempfile
 from diambra.arena import load_settings_flat_dict, SpaceTypes
 from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
+from diambra.arena.utils.diambra_data_loader import DiambraDataLoader
 
 import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.callbacks import CallbackList, EvalCallback, StopTrainingOnNoModelImprovement
 
-from diambra.arena.utils.diambra_data_loader import DiambraDataLoader
 from imitation.data.types import TrajectoryWithRew
 from imitation.algorithms import bc
 from imitation.algorithms.dagger import SimpleDAggerTrainer
@@ -127,13 +127,13 @@ def main(
     transitions = get_transitions(imitation_data_loader, agent_num=agent_num)
     print("\nTransitions loaded")
 
-     # PPO settings
+    # PPO settings
     ppo_settings = policy_params["ppo_settings"]
     policy = ppo_settings["policy_type"]
     gamma = ppo_settings["gamma"]
     n_eval_episodes = ppo_settings["n_eval_episodes"]
-    learning_rate = linear_schedule(ppo_settings["finetune_lr"][0], ppo_settings["finetune_lr"][1])
-    clip_range = linear_schedule(ppo_settings["finetune_cr"][0], ppo_settings["finetune_cr"][1])
+    learning_rate = linear_schedule(ppo_settings["train_lr"][0], ppo_settings["train_lr"][1])
+    clip_range = linear_schedule(ppo_settings["train_cr"][0], ppo_settings["train_cr"][1])
     clip_range_vf = clip_range
     batch_size = ppo_settings["batch_size"]
     n_epochs = ppo_settings["n_epochs"]
@@ -202,6 +202,7 @@ def main(
             train_characters=train_characters,
             eval_characters=eval_characters,
             multi_agent=is_multi_agent,
+            defensive_training=True,
             train_env_settings=settings,
             eval_env_settings=settings, 
             wrappers_settings=wrappers_settings, 
@@ -458,7 +459,7 @@ if __name__ == "__main__":
     parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
     parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
     parser.add_argument("--datasetPath", type=str, required=True, help="Path to imitation trajectories")
-    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default=None)
+    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default="sfiii3n")
     parser.add_argument("--numTrainEnvs", type=int, required=False, help="Number of training environments", default=8)
     parser.add_argument("--numEvalEnvs", type=int, required=False, help="Number of evaluation environments", default=4)
     parser.add_argument("--agentNum", type=int, required=False, help="Agent number (if trajectories come from multiagent env)", default=None)

@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium.spaces import Dict
 from stable_baselines3.common.vec_env import VecEnv, VecEnvWrapper
 import numpy as np
+from diambra.arena import Roles
 
 class VecEnvMDTransferWrapper(VecEnvWrapper):
     '''
@@ -173,7 +174,7 @@ class DiscreteTransferWrapper(gym.Wrapper):
         return obs[self.image_space_keys[0]], reward, terminated, truncated, info
 
 class MultiAgentMDTransferWrapper(gym.Wrapper):
-    def __init__(self, env, stack_frames: int, no_move_idx: int = 0, no_attack_idx: int = 0):
+    def __init__(self, env, stack_frames: int, defense_training: bool = False, no_move_idx: int = 0, no_attack_idx: int = 0):
         super().__init__(env)
         self.env = env
         self.valid_moves = env.action_space["agent_0"].nvec[0]
@@ -186,9 +187,23 @@ class MultiAgentMDTransferWrapper(gym.Wrapper):
             self.image_space_keys = list(getattr(env.unwrapped, "image_space_keys", ["frame"]))
         except Exception:
             self.image_space_keys = ["frame"]
+        self.defense_training = defense_training
+        self.health_keys = ["P1_health"]
+        self.last_health_value = None
+        self.roles = [Roles.P1, Roles.P2]
 
     def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
+        episode_roles = tuple(np.random.permutation(self.roles))
+        if episode_roles[0] == Roles.P1: # Assumes policy is agent_0 (always seems to be)
+            self.health_keys[0] = "P1_health"
+        else:
+            self.health_keys[0] = "P2_health"
+        episode_settings = {
+            "role": episode_roles
+        }
+        obs, info = self.env.reset(options=episode_settings, **kwargs)
+        if self.defense_training:
+            self.last_health_value = obs[self.health_keys[0]][0]
         return obs[self.image_space_keys[0]], info
 
     def step(self, action):
@@ -202,6 +217,9 @@ class MultiAgentMDTransferWrapper(gym.Wrapper):
         p1_attack = p1_attack_idx if p1_attack_idx < self.valid_attacks else self.no_attack_idx
         p2_move = p2_move_idx if p2_move_idx < self.valid_moves else self.no_move_idx
         p2_attack = p2_attack_idx if p2_attack_idx < self.valid_attacks else self.no_attack_idx
+        if self.defense_training:
+            p2_move = np.random.randint(0, self.valid_moves)
+            p2_attack = np.random.randint(0, self.valid_attacks)
         step_result = self.env.step({"agent_0": [p1_move, p1_attack], "agent_1": [p2_move, p2_attack]})
         # Unpack the step result depending on the API.
         if len(step_result) == 4:
@@ -209,6 +227,10 @@ class MultiAgentMDTransferWrapper(gym.Wrapper):
             truncated = False
         else:
             obs, reward, terminated, truncated, info = step_result
+        if self.defense_training:
+            new_health_value = obs[self.health_keys[0]][0]
+            reward = self.last_health_value - new_health_value # Focus on difference between own health values to encourage defense
+            self.last_health_value = new_health_value
         return obs[self.image_space_keys[0]], reward, terminated, truncated, info
     
 class MultiAgentDiscreteTransferWrapper(gym.Wrapper):

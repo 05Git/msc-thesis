@@ -1,6 +1,6 @@
 folders:
   parent_dir: "tests"
-  model_name: "training_mode_no_bc"
+  model_name: "agg_into_def_training"
 
 policy_kwargs:
   #net_arch: [{ pi: [64, 64], vf: [32, 32] }]
@@ -9,7 +9,7 @@ policy_kwargs:
 ppo_settings:
   policy_type: "CnnPolicy"
   gamma: 0.99
-  model_checkpoint: "500000"
+  model_checkpoint: "2000000"
   train_lr: [ 2.5e-4, 2.5e-6 ]
   finetune_lr: [ 5.0e-5, 2.5e-6 ]
   train_cr: [ 0.15, 0.025 ]
@@ -17,9 +17,9 @@ ppo_settings:
   batch_size: 1024 #8 #nminibatches gave different batch size depending on the number of environments: batch_size = (n_steps * n_envs) // nminibatches
   n_epochs: 10
   n_steps: 128
-  autosave_freq: 100_000
-  eval_freq: 1_000_000
-  time_steps: 500_000
+  autosave_freq: 200_000
+  eval_freq: 2_000_000
+  time_steps: 1_000_000
   n_eval_episodes: 25
   seeds: !!python/tuple [ 0 ]
 

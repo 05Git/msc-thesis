@@ -91,10 +91,9 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str, agent_path: str | Non
         #    action = int(action)
         # print(f"Action: {action}")
         obs, rew, done, info = env.step(action)
-        # print(type(info))
         # print(f"Observation: {obs}")
         # print(f"Reward: {rew}")
-        # print(f"Dones: {dones}")
+        # print(f"Dones: {done}")
         # print(f"Info: {info}")
         
         if done:

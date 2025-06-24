@@ -26,7 +26,8 @@ def make_sb3_envs(
     num_eval_envs: int,
     train_characters: list[str] | None,
     eval_characters: list[str] | None,
-    multi_agent: bool = False,
+    multi_agent: bool=False,
+    defensive_training: bool=False,
     train_env_settings: Union[EnvironmentSettings, EnvironmentSettingsMultiAgent]=EnvironmentSettings(),
     eval_env_settings: Union[EnvironmentSettings, EnvironmentSettingsMultiAgent]=EnvironmentSettings(),
     wrappers_settings: WrappersSettings=WrappersSettings(),
@@ -35,7 +36,7 @@ def make_sb3_envs(
     seed: int=None, 
     start_index: int=0,
     allow_early_resets: bool=True, 
-    start_method: str=None, 
+    start_method: str=None,
     no_vec: bool=False,
     use_subprocess: bool=True, 
     log_dir_base: str="/tmp/DIAMBRALog/"
@@ -62,6 +63,7 @@ def make_sb3_envs(
                 env = custom_wrappers.MultiAgentMDTransferWrapper(
                     env=env,
                     stack_frames=wrappers_settings.stack_frames,
+                    defense_training=defensive_training
                 )
             return env
         return _init

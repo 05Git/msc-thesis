@@ -213,7 +213,7 @@ class ArcadeMetricsTrainCallback(BaseCallback):
 
             if dones[idx]:
                 self.arcade_runs_completed[idx] = True if info["stage_done"] else False
-                self.logger.record("custom/arcade_runs_completed", self.arcade_runs_completed.sum())
+                self.logger.record("rollout/arcade_runs_completed", self.arcade_runs_completed.sum())
 
                 self.total_episodes_completed += 1
                 self.total_stages_completed += self.stages_completed[idx]
@@ -222,7 +222,7 @@ class ArcadeMetricsTrainCallback(BaseCallback):
         # Log running average
         if self.total_episodes_completed > 0:
             avg_stages = self.total_stages_completed / self.total_episodes_completed
-            self.logger.record("custom/avg_stages_completed", avg_stages)
+            self.logger.record("rollout/avg_stages_completed", avg_stages)
 
         return True
 

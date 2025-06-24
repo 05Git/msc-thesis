@@ -16,15 +16,15 @@ import custom_wrappers
 import custom_callbacks
 import utils
 
-# diambra run -s 8 python sb3/evaluate_ppo.py --settingsCfg config_files/transfer-cfg-settings.yaml --policyCfg config_files/transfer-cfg-ppo.yaml --evalCfg config_files/eval-cfg.py --deterministic
+# diambra run -s 4 python sb3/evaluate.py --settingsCfg config_files/settings-cfg.yaml --policyCfg config_files/ppo-cfg.yaml --evalCfg config_files/eval-cfg.py --deterministic --dirName _
 
-def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool):
+def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool, dir_name: str):
     # Game IDs
     game_ids = [
         "sfiii3n",
+        "samsh5sp"
         "kof98umh",
         "umk3",
-        "samsh5sp"
     ]
 
     # Device
@@ -57,255 +57,110 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
 
     # Evaluation settings
     model_paths = eval_params["model_paths"]
-    eval_type = eval_params["transfer_type"]
     eval_id = eval_params["eval_id"]
-    if eval_type == "game" or eval_id not in game_ids:
-        eval_id = None
+    assert eval_id in game_ids, f"({eval_id} not in valid game IDs: {game_ids})"
 
-    envs_settings = []
+    # envs_settings = []
     settings = settings_params["settings"]["shared"]
     settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
-    if eval_id:
-        game_settings = settings_params["settings"][eval_id].copy()
-        if eval_params["transfer_type"] == "character":
-            for char in eval_params["characters"]:
-                game_settings["characters"] = char
-                env_settings = settings.copy()
-                env_settings.update(game_settings)
-                envs_settings.append(env_settings)
-        else:
-            game_settings["characters"] = eval_params["characters"][0]
-            env_settings = settings.copy()
-            env_settings.update(game_settings)
-            env_settings = load_settings_flat_dict(EnvironmentSettings, env_settings)
-            envs_settings.append(env_settings)
-    else:
-        for game_list in eval_params["games"]:
-            env_settings = settings.copy()
-            env_settings["characters"] = {}
-            for game_id in game_list:
-                game_settings = settings_params["settings"][game_id].copy()
-                game_settings["characters"] = { game_id : game_settings["characters"][0] }
-                env_settings.update(game_settings)
-            envs_settings.append(env_settings)
+    game_settings = settings_params["settings"][eval_id]
+    game_settings["characters"] = eval_params["characters"][0]
+    settings.update(game_settings)
+    settings = load_settings_flat_dict(EnvironmentSettings, settings)
     
     # Load wrappers settings as dictionary
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
 
     eval_results = {}
+    eval_characters = eval_params["characters"]
     for seed in seeds:
         eval_results.update({seed : {}})
         utils.set_global_seed(seed)
 
-        if eval_type == "game":
-            # Cross game transfer
-            for idx_1, path in enumerate(model_paths):
-                eval_settings = envs_settings[idx_1].copy()
-                eval_characters = eval_settings["characters"].copy()
-                # Initialize vectors to store evaluation info
-                mean_rewards, std_rewards = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
-                mean_stages, std_stages = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
-                mean_arcade_runs, std_arcade_runs = np.zeros(idx_1 + 1, dtype=np.float64), np.zeros(idx_1 + 1, dtype=np.float64)
-                for idx_2, game_id in enumerate(eval_characters.keys()):
-                    # Set up env
-                    eval_settings["game_id"] = game_id
-                    eval_settings["characters"] = eval_characters[game_id]
-                    settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
-                    env, num_envs = make_sb3_env(settings.game_id, settings, wrappers_settings, seed=seed)
-                    if settings.action_space == SpaceTypes.DISCRETE:
-                        env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames=wrappers_settings.stack_frames)
-                    else:
-                        env = custom_wrappers.VecEnvMDTransferWrapper(env, stack_frames=wrappers_settings.stack_frames)
-                    env = VecTransposeImage(env)
-
-                    # Set up agent
-                    agent = PPO.load(
-                        path,
-                        env=env,
-                        policy_kwargs=policy_kwargs,
-                        device=device,
-                        custom_objects={
-                            "action_space" : env.action_space,
-                            "observation_space" : env.observation_space,
-                        }
-                    )
-
-                    rwd_info, stages_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
-                        model=agent,
-                        env=env,
-                        n_eval_episodes=n_eval_episodes * num_envs,
-                        deterministic=deterministic,
-                        render=False,
-                    )
-                    env.close()
-
-                    # Store evaluation info
-                    mean_rewards[idx_2], std_rewards[idx_2] = rwd_info
-                    mean_stages[idx_2], std_stages[idx_2] = stages_info
-                    mean_arcade_runs[idx_2], std_arcade_runs[idx_2] = arcade_info
-                
-                # Average out results across characters
-                mean_rewards, std_rewards = np.mean(mean_rewards), np.mean(std_rewards)
-                mean_stages, std_stages = np.mean(mean_stages), np.mean(std_stages)
-                mean_arcade_runs, std_arcade_runs = np.mean(mean_arcade_runs), np.mean(std_arcade_runs)
-                eval_results[seed].update({
-                    f"Model: {path}, Games: {list(eval_characters.keys())}": {
-                        "mean_reward": mean_rewards,
-                        "std_reward": std_rewards,
-                        "mean_stages": mean_stages,
-                        "std_stages": std_stages,
-                        "mean_arcade_runs": mean_arcade_runs,
-                        "std_arcade_runs": std_arcade_runs,
-                    }
-                })
-        elif eval_type == "character":
-            # Cross character transfer
-            for idx_1, path in enumerate(model_paths):
-                eval_settings = envs_settings[idx_1].copy()
-                eval_characters = eval_settings["characters"].copy()
-                # Initialize vectors to store evaluation info
-                mean_rewards, std_rewards = np.zeros(len(eval_characters), dtype=np.float64), np.zeros(len(eval_characters), dtype=np.float64)
-                mean_stages, std_stages = np.zeros(len(eval_characters), dtype=np.float64), np.zeros(len(eval_characters), dtype=np.float64)
-                mean_arcade_runs, std_arcade_runs = np.zeros(len(eval_characters), dtype=np.float64), np.zeros(len(eval_characters), dtype=np.float64)
-                for idx_2, character in enumerate(eval_characters):
-                    eval_settings["characters"] = character
-                    settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
-                    env, num_envs = make_sb3_env(settings.game_id, settings, wrappers_settings, seed=seed)
-                    if settings.action_space == SpaceTypes.DISCRETE:
-                        env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames=wrappers_settings.stack_frames)
-                    else:
-                        env = custom_wrappers.VecEnvMDTransferWrapper(env, stack_frames=wrappers_settings.stack_frames)
-                    env = VecTransposeImage(env)
-
-                    # Set up agent
-                    agent = PPO.load(
-                        path,
-                        env=env,
-                        policy_kwargs=policy_kwargs,
-                        device=device,
-                        custom_objects={
-                            "action_space" : env.action_space,
-                            "observation_space" : env.observation_space,
-                        }
-                    )
-
-                    rwd_info, stages_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
-                        model=agent,
-                        env=env,
-                        n_eval_episodes=n_eval_episodes * num_envs,
-                        deterministic=deterministic,
-                        render=False,
-                    )
-                    env.close()
-
-                    # Store evaluation info
-                    mean_rewards[idx_2], std_rewards[idx_2] = rwd_info
-                    mean_stages[idx_2], std_stages[idx_2] = stages_info
-                    mean_arcade_runs[idx_2], std_arcade_runs[idx_2] = arcade_info
-                
-                # Average out results across characters
-                mean_rewards, std_rewards = np.mean(mean_rewards), np.mean(std_rewards)
-                mean_stages, std_stages = np.mean(mean_stages), np.mean(std_stages)
-                mean_arcade_runs, std_arcade_runs = np.mean(mean_arcade_runs), np.mean(std_arcade_runs)
-                eval_results[seed].update({
-                    f"Model: {path}, Characters: {eval_characters}": {
-                        "mean_reward": mean_rewards,
-                        "std_reward": std_rewards,
-                        "mean_stages": mean_stages,
-                        "std_stages": std_stages,
-                        "mean_arcade_runs": mean_arcade_runs,
-                        "std_arcade_runs": std_arcade_runs,
-                    }
-                })
-        else:
-            # Single character, single game evaluation
-            eval_settings = envs_settings[0]
-            env, num_envs = make_sb3_env(
-                game_id=eval_settings.game_id,
-                env_settings=eval_settings,
-                wrappers_settings=wrappers_settings,
-                seed=seed,
+        env, num_envs = make_sb3_env(
+            game_id=settings.game_id,
+            env_settings=settings,
+            wrappers_settings=wrappers_settings,
+            seed=seed
+        )
+        if settings.action_space == SpaceTypes.DISCRETE:
+            env = custom_wrappers.VecEnvDiscreteTransferWrapper(
+                venv=env,
+                stack_frames=wrappers_settings.stack_frames,
             )
-            if eval_settings.action_space == SpaceTypes.DISCRETE:
-                env = custom_wrappers.VecEnvDiscreteTransferWrapper(env, stack_frames=wrappers_settings.stack_frames)
-            else:
-                env = custom_wrappers.VecEnvMDTransferWrapper(env, stack_frames=wrappers_settings.stack_frames)
-            env = VecTransposeImage(env)
-            for path in model_paths:
-                agent = PPO.load(
-                    path,
-                    env=env,
-                    policy_kwargs=policy_kwargs,
-                    device=device,
-                    custom_objects={
-                        "action_space" : env.action_space,
-                        "observation_space" : env.observation_space,
-                    }
-                )
-                reward_info, stages_info, arcade_info = custom_callbacks.evaluate_policy_with_arcade_metrics(
-                    model=agent,
-                    env=env,
-                    n_eval_episodes=n_eval_episodes * num_envs,
-                    deterministic=deterministic,
-                    render=False,
-                )
-                mean_reward, std_reward = reward_info
-                mean_stages, std_stages = stages_info
-                mean_arcades, std_arcades = arcade_info
-                eval_results[seed].update({
-                    f"Model: {path}": {
-                        "mean_reward": mean_reward,
-                        "std_reward": std_reward,
-                        "mean_stages": mean_stages,
-                        "std_stages": std_stages,
-                        "mean_arcade_runs": mean_arcades,
-                        "std_arcade_runs": std_arcades,
-                    }
-                })
-            env.close()
+        else:
+            env = custom_wrappers.VecEnvMDTransferWrapper(
+                venv=env,
+                stack_frames=wrappers_settings.stack_frames,
+            )
+        env = VecTransposeImage(env)
+
+        reward_infos = np.zeros(len(model_paths), dtype=np.float64)
+        episode_lengths = np.zeros(len(model_paths), dtype=np.float64)
+        stages_infos = np.zeros(len(model_paths), dtype=np.float64)
+        arcade_infos = np.zeros(len(model_paths), dtype=np.float64)
+        for idx, path in enumerate(model_paths):
+            agent = PPO.load(
+                path=path,
+                env=env,
+                policy_kwargs=policy_kwargs,
+                device=device,
+                custom_objects={
+                    "action_space": env.action_space,
+                    "observation_space": env.observation_space,
+                }
+            )
+
+            episode_options = {
+                "characters": eval_characters[idx] # Evaluate next character
+            }
+            env.env_method("reset", options=episode_options)
+
+            reward_infos[idx], episode_lengths[idx], stages_infos[idx], arcade_infos[idx] = custom_callbacks.evaluate_policy_with_arcade_metrics(
+                model=agent,
+                env=env,
+                n_eval_episodes=n_eval_episodes * num_envs,
+                deterministic=deterministic,
+                return_episode_rewards=True,
+            )
+
+        eval_results[seed].update({
+            "characters": eval_characters,
+            "rewards_infos": reward_infos.tolist(),
+            "episode_lengths": episode_lengths.tolist(),
+            "stages_infos": stages_infos.tolist(),
+            "arcade_runs_infos": arcade_infos.tolist(),
+            "mean_reward": reward_infos.mean(axis=1).tolist(),
+            "std_reward": reward_infos.std(axis=1).tolist(),
+            "mean_stages": stages_infos.mean(axis=1).tolist(),
+            "std_stages": stages_infos.std(axis=1).tolist(),
+            "mean_arcade_runs": arcade_infos.mean(axis=1).tolist(),
+            "std_arcade_runs": arcade_infos.std(axis=1).tolist(),
+        })
+        env.close()
 
     # Save evaluation results
-    save_path = os.path.join(
+    base_save_path = os.path.join(
         base_path,
         policy_params["folders"]["parent_dir"],
         policy_params["folders"]["model_name"],
-        "model",
+        "evaluations",
+        dir_name,
     )
-    if eval_type == "character":
-        save_path = os.path.join(save_path, "char_transfer_results.json")
-    elif eval_type == "game":
-        save_path = os.path.join(save_path, "game_transfer_results.json")
-    else:
-        save_path = os.path.join(save_path, "evaluation_results.json")
-    with open(save_path, "w") as f:
+    os.makedirs(base_save_path, exist_ok=True)
+    json_save_path = os.path.join(base_save_path, "results.json")
+    with open(json_save_path, "w") as f:
         json.dump(eval_results, f, indent=4)
 
-    print("-----------------------------")
-    print("-----Evaluation Results------")
-    print("-----------------------------")
-    print("----------See Plots----------")
-    print("-----------------------------")
-
     x = np.linspace(1, len(model_paths), num=len(model_paths))
+    x_label = ""
     colours = ["r", "g", "b", "y", "m", "c", "k"]
-    if eval_type == "character":
-        x_label = "Number of Characters"
-    elif eval_type == "game":
-        x_label = "Number of Games"
-    else:
-        x_label = "Model No. Evaluated"
-    figure_save_path = os.path.join(
-        base_path,
-        policy_params["folders"]["parent_dir"],
-        policy_params["folders"]["model_name"],
-        "model",
-    )
 
     plt.figure()
     plt.xlabel(x_label)
     for idx, seed in enumerate(seeds):
-        mean_rwd = [eval_results[seed][epoch]["mean_reward"] for epoch in eval_results[seed]]
-        std_rwd = [eval_results[seed][epoch]["std_reward"] for epoch in eval_results[seed]]
+        mean_rwd = eval_results[seed]["mean_reward"]
+        std_rwd = eval_results[seed]["std_reward"]
         pos_std = [sum(y) for y in zip(mean_rwd, std_rwd)]
         neg_std = [ya - yb for ya, yb in zip(mean_rwd, std_rwd)]
         plt.plot(x, mean_rwd, color=colours[idx], label=f"Seed: {seed}")
@@ -313,13 +168,13 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     plt.ylabel("Average Reward Across Evaluation Episodes")
     plt.grid()
     plt.legend()
-    plt.savefig(os.path.join(figure_save_path, "reward_plot.png"))
+    plt.savefig(os.path.join(base_save_path, "reward_plot.png"))
 
     plt.figure()
     plt.xlabel(x_label)
     for idx, seed in enumerate(seeds):
-        mean_stages = [eval_results[seed][epoch]["mean_stages"] for epoch in eval_results[seed]]
-        std_stages = [eval_results[seed][epoch]["std_stages"] for epoch in eval_results[seed]]
+        mean_stages = eval_results[seed]["mean_stages"]
+        std_stages = eval_results[seed]["std_stages"]
         pos_std = [sum(y) for y in zip(mean_stages, std_stages)]
         neg_std = [ya - yb for ya, yb in zip(mean_stages, std_stages)]
         plt.plot(x, mean_stages, color=colours[idx], label=f"Seed: {seed}")
@@ -327,13 +182,13 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     plt.ylabel("Average No. of Stages Completed Across Evaluation Episodes")
     plt.grid()
     plt.legend()
-    plt.savefig(os.path.join(figure_save_path, "stages_plot.png"))
+    plt.savefig(os.path.join(base_save_path, "stages_plot.png"))
 
     plt.figure()
     plt.xlabel(x_label)
     for idx, seed in enumerate(seeds):
-        mean_arcade_runs = [eval_results[seed][epoch]["mean_arcade_runs"] for epoch in eval_results[seed]]
-        std_arcade_runs = [eval_results[seed][epoch]["std_arcade_runs"] for epoch in eval_results[seed]]
+        mean_arcade_runs = eval_results[seed]["mean_arcade_runs"]
+        std_arcade_runs = eval_results[seed]["std_arcade_runs"]
         pos_std = [sum(y) for y in zip(mean_arcade_runs, std_arcade_runs)]
         neg_std = [ya - yb for ya, yb in zip(mean_arcade_runs, std_arcade_runs)]
         plt.plot(x, mean_arcade_runs, color=colours[idx], label=f"Seed: {seed}")
@@ -341,15 +196,18 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool)
     plt.ylabel("Average No. of Successful Arcade Runs Across Evaluation Episodes")
     plt.grid()
     plt.legend()
-    plt.savefig(os.path.join(figure_save_path, "arcade_runs_plot.png"))
+    plt.savefig(os.path.join(base_save_path, "arcade_runs_plot.png"))
+    
+    print(f"\nEvaluations complete, see evaluations/{dir_name} for results.")
 
     return 0
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policyCfg", type=str, required=False, help="Policy settings config", default="config_files/transfer-cfg-ppo.yaml")
-    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/transfer-cfg-settings.yaml")
+    parser.add_argument("--policyCfg", type=str, required=False, help="Policy settings config", default="config_files/ppo-cfg.yaml")
+    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
     parser.add_argument("--evalCfg", type=str, required=False, help="Evaluation settings config", default="config_files/eval-cfg.yaml")
+    parser.add_argument("--dirName", type=str, required=False, help="Name of evaluations directory", default="evaluation_results")
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Evaluate deterministic or stochastic policy", default=True)
     opt = parser.parse_args()
 
@@ -358,4 +216,5 @@ if __name__ == "__main__":
         settings_cfg=opt.settingsCfg, 
         eval_cfg=opt.evalCfg,
         deterministic=opt.deterministic,
+        dir_name=opt.dirName,
     )

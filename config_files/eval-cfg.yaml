@@ -1,20 +1,9 @@
 model_paths: [
-  "sb3/ppo_agents/sf3_interleaved/model/seed_0/char_transfer/9000000.zip",
-  "sb3/ppo_agents/sf3_interleaved/model/seed_0/char_transfer/9000000.zip",
-  "sb3/ppo_agents/sf3_interleaved/model/seed_0/char_transfer/9000000.zip",
-  "sb3/ppo_agents/sf3_interleaved/model/seed_0/char_transfer/9000000.zip",
+  "sb3/tests/training_mode_no_bc/model/seed_0/1000000.zip",
+  "sb3/tests/training_mode_no_bc/model/seed_0/1000000.zip",
+  "sb3/tests/training_mode_no_bc/model/seed_0/1000000.zip",
 ]
-transfer_type: "character" # null / "character" / "game"
 eval_id: "sfiii3n"
 characters: [
-  ["Ryu"],
-  ["Urien"],
-  ["Makoto"],
-  ["Hugo"],
-]
-games: [
-  ["sfiii3n"],
-  ["sfiii3n", "kof98umh"],
-  ["sfiii3n", "kof98umh", "umk3"],
-  ["sfiii3n", "kof98umh", "umk3", "samsh5sp"],
+  "Ken", "Alex", "Yang"
 ]
