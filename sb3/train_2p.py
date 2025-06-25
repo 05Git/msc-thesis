@@ -15,17 +15,16 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.callbacks import CallbackList, EvalCallback, StopTrainingOnNoModelImprovement
 
-import custom_wrappers
 import custom_callbacks
 import utils
+from custom_wrappers import PixelObsWrapper, ActionWrapper2P, AttTrainWrapper, DefTrainWrapper
 
 def main(
     policy_cfg: str, 
     settings_cfg: str,
     train_id: str, 
-    num_train_envs: int, 
+    num_train_envs: int,
     num_eval_envs: int,
-    defensive_training: bool,
 ):
     # Game IDs
     game_ids = [
@@ -94,8 +93,13 @@ def main(
         policy_kwargs = {}
     
     # Load wrappers settings as dictionary
-    wrappers_settings = settings_params["wrappers_settings"]
-    wrappers_settings["role_relative"] = False
+    settings_params["wrappers_settings"]["role_relative"] = False
+    custom_wrappers_settings = {"wrappers": [
+        [AttTrainWrapper, {}], # Important to place reward shaping wrappers before obs filtering wrappers
+        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
+        [ActionWrapper2P, {"action_space": settings_params["settings"]["shared"]["action_space"], "opp_type": "random"}],
+    ]}
+    settings_params["wrappers_settings"].update(custom_wrappers_settings)
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
     # Load shared settings
     settings = settings_params["settings"]["shared"]
@@ -124,19 +128,15 @@ def main(
         eval_results.update({seed: {}})
 
         # Initialise envs and wrap in transfer wrappers
-        train_env, _ = utils.make_sb3_envs(
+        train_env, eval_env = utils.train_eval_split(
             game_id=settings.game_id,
             num_train_envs=num_train_envs,
             num_eval_envs=num_eval_envs,
-            train_characters=train_characters,
-            eval_characters=eval_characters,
-            multi_agent=True,
-            defensive_training=defensive_training,
-            train_env_settings=settings,
-            eval_env_settings=settings, 
-            wrappers_settings=wrappers_settings, 
-            seed=seed,
-            use_subprocess=True,
+            train_settings=settings,
+            train_wrappers=wrappers_settings,
+            eval_settings=settings,
+            eval_wrappers=wrappers_settings,
+            seed=seed
         )
     
         # Load policy params if checkpoint exists, else make a new agent
@@ -242,7 +242,6 @@ if __name__ == "__main__":
     parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default="sfiii3n")
     parser.add_argument("--numTrainEnvs", type=int, required=False, help="Number of training environments", default=8)
     parser.add_argument("--numEvalEnvs", type=int, required=False, help="Number of evaluation environments", default=4)
-    parser.add_argument("--defensiveTraining", action=argparse.BooleanOptionalAction, required=False, help="Train defense or not", default=False)
     opt = parser.parse_args()
 
     main(
@@ -251,5 +250,4 @@ if __name__ == "__main__":
         train_id=opt.trainID,
         num_train_envs=opt.numTrainEnvs,
         num_eval_envs=opt.numEvalEnvs,
-        defensive_training=opt.defensiveTraining
     )

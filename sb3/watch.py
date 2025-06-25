@@ -1,15 +1,15 @@
 import os
 import yaml
-import json
 import argparse
 import torch
 import numpy as np
-from diambra.arena import load_settings_flat_dict, SpaceTypes
-from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, EnvironmentSettings, WrappersSettings
+import diambra.arena
+from diambra.arena import load_settings_flat_dict, SpaceTypes, EnvironmentSettings, WrappersSettings
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
-import custom_wrappers
+from custom_wrappers import PixelObsWrapper, ActionWrapper1P
 import utils
+import gymnasium as gym
 
 # diambra run -g python sb3/watch.py --policyCfg config_files/transfer-cfg-ppo.yaml --settingsCfg config_files/transfer-cfg-settings.yaml --gameID _
 
@@ -35,6 +35,11 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str, agent_path: str | Non
     )
 
     # Load wrappers settings as dictionary
+    custom_wrappers_settings = {"wrappers": [
+        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
+        [ActionWrapper1P, {"action_space": settings_params["settings"]["shared"]["action_space"]}],
+    ]}
+    settings_params["wrappers_settings"].update(custom_wrappers_settings)
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
     # Load shared settings
     settings = settings_params["settings"]["shared"]
@@ -49,19 +54,11 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str, agent_path: str | Non
     seed = policy_params['ppo_settings']['seeds'][0]
 
     # Create environment
-    env, _ = make_sb3_env(
+    env = diambra.arena.make(
         game_id=settings.game_id,
         env_settings=settings,
         wrappers_settings=wrappers_settings,
-        seed=seed,
-        no_vec=True
     )
-    utils.set_global_seed(seed)
-
-    if settings.action_space == SpaceTypes.DISCRETE:
-        env = custom_wrappers.DiscreteTransferWrapper(env=env, stack_frames=wrappers_settings.stack_frames, characters=[settings.characters])
-    else:
-        env = custom_wrappers.MDTransferWrapper(env=env, stack_frames=wrappers_settings.stack_frames, characters=[settings.characters])
     env = VecTransposeImage(DummyVecEnv([lambda: env]))
 
     # Policy param
@@ -98,6 +95,7 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str, agent_path: str | Non
         
         if done:
             break
+        
     env.close()
 
     return 0

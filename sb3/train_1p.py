@@ -10,20 +10,22 @@ from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CallbackList, StopTrainingOnNoModelImprovement
+from stable_baselines3.common.vec_env import VecTransposeImage
 
 import custom_callbacks
 import utils
+from custom_wrappers import PixelObsWrapper, ActionWrapper1P, InterleavingWrapper
 
-# diambra run -s _ python sb3/train.py --policyCfg config_files/ppo-cfg.yaml --settingsCfg config_files/settings-cfg.yaml --trainID _ --trainType _ --numTrainEnvs _ --numEvalEnvs _
+# diambra run -s _ python sb3/train.py --policy_cfg config_files/ppo-cfg.yaml --settings_cfg config_files/settings-cfg.yaml --train_id _ --train_type _ --num_train_envs _ --num_eval_envs _
 
 def main(
     policy_cfg: str,
     settings_cfg: str, 
     train_id: str | None, 
     train_type: str,
-    num_train_envs: int, 
-    num_eval_envs: int
-):
+    num_train_envs: int,
+    num_eval_envs: int,
+):    
     # Game IDs
     game_ids = [
         "sfiii3n",
@@ -91,7 +93,11 @@ def main(
         policy_kwargs = {}
 
     # Load wrappers settings as dictionary
-    wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
+    custom_wrappers_settings = {"wrappers": [
+        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
+        [ActionWrapper1P, {"action_space": settings_params["settings"]["shared"]["action_space"]}],
+    ]}
+    settings_params["wrappers_settings"].update(custom_wrappers_settings)
     # Load shared settings
     settings = settings_params["settings"]["shared"]
     # Set action space type
@@ -135,34 +141,45 @@ def main(
         
         for epoch in range(len(envs_settings)):
             checkpoint_path = os.path.join(save_path, model_checkpoint)
+
             # Set up separate settings for train and evaluation envs
             train_settings = envs_settings[epoch].copy()
             train_settings["characters"] = train_settings["characters"]["train"]
             eval_settings = envs_settings[epoch].copy()
             eval_settings["characters"] = eval_settings["characters"]["eval"]
+
             train_characters = train_settings["characters"].copy() # Make a list of characters to train on
             eval_characters = eval_settings["characters"].copy()
+
             train_settings["characters"] = train_settings["characters"][0] # Set initial character to the first one one the list, so that the dict can be loaded
             train_settings = load_settings_flat_dict(EnvironmentSettings, train_settings)
             eval_settings["characters"] = eval_settings["characters"][0]
             eval_settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
 
+            train_wrappers = settings_params["wrappers_settings"].copy()
+            if len(train_characters) > 1:
+                train_wrappers["wrappers"].append([InterleavingWrapper, {"character_list": train_characters}])
+            train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
+
+            eval_wrappers = settings_params["wrappers_settings"].copy()
+            if len(eval_characters) > 1:
+                eval_wrappers["wrappers"].append([InterleavingWrapper, {"character_list": eval_characters}])
+            eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
+
             # Initialise envs and wrap in transfer wrappers
-            train_env, eval_env = utils.make_sb3_envs(
+            train_env, eval_env = utils.train_eval_split(
                 game_id=train_settings.game_id,
                 num_train_envs=num_train_envs,
                 num_eval_envs=num_eval_envs,
-                train_characters=train_characters,
-                eval_characters=eval_characters,
-                train_env_settings=train_settings,
-                eval_env_settings=eval_settings, 
-                wrappers_settings=wrappers_settings, 
-                seed=seed,
-                use_subprocess=True,
+                train_settings=train_settings,
+                eval_settings=eval_settings,
+                train_wrappers=train_wrappers,
+                eval_wrappers=eval_wrappers,
+                seed=seed
             )
             print(f"\nOriginal action space: {train_env.unwrapped.action_space}")
             print(f"Wrapped action space: {train_env.action_space}")
-            print(f"\nActivated {num_eval_envs + num_train_envs} environment(s)")
+            print(f"\nActivated {num_train_envs + num_eval_envs} environment(s)")
 
             # Load policy params if checkpoint exists, else make a new agent
             if int(model_checkpoint) > 0 and os.path.isfile(checkpoint_path + ".zip"):
@@ -260,24 +277,23 @@ def main(
             train_env.close()
             eval_env.close()
 
-    # Training finished
     return 0
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
-    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
-    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default=None)
-    parser.add_argument('--trainType', type=str, required=False, help="Sequential or interleaved training", default="interleaved")
-    parser.add_argument('--numTrainEnvs', type=int, required=False, help="Number of training environments", default=8)
-    parser.add_argument('--numEvalEnvs', type=int, required=False, help="Number of evaluation environments", default=4)
+    parser.add_argument("--policy_cfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
+    parser.add_argument("--settings_cfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
+    parser.add_argument("--train_id", type=str, required=False, help="Specific game to train on", default="sfiii3n")
+    parser.add_argument("--train_type", type=str, required=False, help="Sequential or interleaved training", default="interleaved")
+    parser.add_argument("--num_train_envs", type=int, required=False, help="Number of train envs", default=8)
+    parser.add_argument("--num_eval_envs", type=int, required=False, help="Number of evaluation envs", default=4)
     opt = parser.parse_args()
 
     main(
-        policy_cfg=opt.policyCfg, 
-        settings_cfg=opt.settingsCfg, 
-        train_id=opt.trainID, 
-        train_type=opt.trainType,
-        num_train_envs=opt.numTrainEnvs,
-        num_eval_envs=opt.numEvalEnvs,
+        policy_cfg=opt.policy_cfg, 
+        settings_cfg=opt.settings_cfg, 
+        train_id=opt.train_id, 
+        train_type=opt.train_type,
+        num_train_envs=opt.num_train_envs,
+        num_eval_envs=opt.num_eval_envs,
     )
