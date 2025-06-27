@@ -30,7 +30,7 @@ class ActionWrapper1P(gym.Wrapper):
         env,
         action_space: str = "multi_discrete",
         no_op: Union[int, list[int]] = 0,
-        max_actions: Union[int, list[int]] = [9, 11]
+        max_actions: Union[int, list[int]] = [9,11]
     ):
         super().__init__(env)
         self.env = env
@@ -65,7 +65,7 @@ class ActionWrapper2P(gym.Wrapper):
         env,
         action_space: str = "multi_discrete",
         no_op: Union[int, list[int]] = 0,
-        max_actions: Union[int, list[int]] = [9, 11],
+        max_actions: Union[int, list[int]] = [9,11],
         opp_type: str = "no_op"
     ):
         super().__init__(env)
@@ -107,15 +107,20 @@ class ActionWrapper2P(gym.Wrapper):
 
 
 class InterleavingWrapper(gym.Wrapper):
-    def __init__(self, env, character_list: list[str]):
+    def __init__(self, env, character_list: list[str], one_p_env: bool):
         super().__init__(env)
         self.character_list = character_list
         self.character_queue = list(np.random.permutation(self.character_list))
+        self.one_p_env = one_p_env
 
     def reset(self, **kwargs):
         next_character = str(self.character_queue.pop())
         if not len(self.character_queue) > 0:
             self.character_queue = list(np.random.permutation(self.character_list))
+        next_character = next_character.translate({ord(i): None for i in "'[]"})
+        next_character = tuple(next_character.split())
+        if len(next_character) == 2 and self.one_p_env:
+            next_character = " ".join(next_character)
         episode_settings = kwargs.get("options", {})
         if episode_settings is None:
             episode_settings = {}

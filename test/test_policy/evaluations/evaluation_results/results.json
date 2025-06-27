@@ -1,0 +1,26 @@
+{
+    "model": "test/test_policy/model/seed_0/bc_trainer/bc_agent_policy.zip",
+    "characters": [
+        "Ryu",
+        null,
+        null
+    ],
+    "rewards_infos": [
+        -1.726708
+    ],
+    "episode_lengths": [
+        1544
+    ],
+    "stages_infos": [
+        0.0
+    ],
+    "arcade_runs_infos": [
+        0.0
+    ],
+    "mean_reward": -1.726708,
+    "std_reward": 0.0,
+    "mean_stages": 0.0,
+    "std_stages": 0.0,
+    "mean_arcade_runs": 0.0,
+    "std_arcade_runs": 0.0
+}
