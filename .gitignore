@@ -8,3 +8,6 @@
 *.pt
 *.pkl
 *.gz
+/.vscode/
+/__pycache__/
+/sb3_distill/

@@ -45,7 +45,7 @@ class ActionWrapper1P(gym.Wrapper):
         self.no_op = no_op if type(no_op) == list else [no_op for _ in range(len(self.valid_actions))]
         assert len(self.no_op) == len(self.valid_actions)
         for no_op_act, valid_act in zip(self.no_op, self.valid_actions):
-            assert not no_op_act > valid_act
+            assert no_op_act < valid_act
     
     def step(self, action):
         for idx in range(len(action)):
@@ -82,17 +82,17 @@ class ActionWrapper2P(gym.Wrapper):
         self.no_op = no_op if type(no_op) == list else [no_op for _ in range(len(self.valid_actions))]
         assert len(self.no_op) == len(self.valid_actions)
         for no_op_act, valid_act in zip(self.no_op, self.valid_actions):
-            assert not no_op_act > valid_act
+            assert no_op_act < valid_act
         assert opp_type in ["no_op", "random"]
         self.opp_type = opp_type
     
     def step(self, action):
-        p1_actions = action[:2]
+        p1_actions = action[:len(self.valid_actions)]
         if self.opp_type == "no_op":
-            replace_action = self.no_op
+            non_agent_action = self.no_op
         elif self.opp_type == "random":
-            replace_action = [np.random.randint(0, x) for x in self.valid_actions]
-        p2_actions = action[2:] if len(action) > 2 else replace_action
+            non_agent_action = [np.random.randint(0, x) for x in self.valid_actions]
+        p2_actions = action[len(self.valid_actions):] if len(action) > len(self.valid_actions) else non_agent_action
         for idx in range(len(p1_actions)):
             p1_actions[idx] = p1_actions[idx] if p1_actions[idx] < self.valid_actions[idx] else self.no_op[idx]
         for idx in range(len(p2_actions)):

@@ -43,7 +43,9 @@ def train_eval_split(game_id: str, num_train_envs: int, num_eval_envs: int,
             env = Monitor(env, log_dir, allow_early_resets=allow_early_resets)
             return env
         return _init
-
+    
+    assert eval_settings.game_id == game_id
+    
     # If not wanting vectorized envs
     if no_vec and (num_train_envs == 1 and num_eval_envs == 1):
         train_env = _make_sb3_env(0, seed, train_settings, train_wrappers)()

@@ -17,7 +17,7 @@ from stable_baselines3.common.callbacks import CallbackList, EvalCallback, StopT
 
 import custom_callbacks
 import utils
-from custom_wrappers import PixelObsWrapper, ActionWrapper2P, AttTrainWrapper, DefTrainWrapper
+from custom_wrappers import PixelObsWrapper, ActionWrapper2P, AttTrainWrapper, DefTrainWrapper, InterleavingWrapper
 
 def main(
     policy_cfg: str, 
@@ -25,6 +25,7 @@ def main(
     train_id: str, 
     num_train_envs: int,
     num_eval_envs: int,
+    train_type: str | None,
 ):
     # Game IDs
     game_ids = [
@@ -92,26 +93,18 @@ def main(
     if not policy_kwargs:
         policy_kwargs = {}
     
-    # Load wrappers settings as dictionary
-    settings_params["wrappers_settings"]["role_relative"] = False
-    custom_wrappers_settings = {"wrappers": [
-        [AttTrainWrapper, {}], # Important to place reward shaping wrappers before obs filtering wrappers
-        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
-        [ActionWrapper2P, {"action_space": settings_params["settings"]["shared"]["action_space"], "opp_type": "random"}],
-    ]}
-    settings_params["wrappers_settings"].update(custom_wrappers_settings)
-    wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
     # Load shared settings
     settings = settings_params["settings"]["shared"]
-    # Set action space type
+    action_space = settings["action_space"]
     settings["action_space"] = SpaceTypes.DISCRETE if settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
+    settings["action_space"] = (settings["action_space"], settings["action_space"])
+    settings["outfits"] = (settings["outfits"], settings["outfits"])
+
     # Load game specific settings
     game_settings = settings_params["settings"][train_id]
     train_characters = game_settings["characters"]["train"]
     eval_characters = game_settings["characters"]["eval"]
-    game_settings["characters"] = game_settings["characters"]["train"][0]
-    settings["action_space"] = (settings["action_space"], settings["action_space"])
-    settings["outfits"] = (settings["outfits"], settings["outfits"])
+    game_settings["characters"] = train_characters[0]
     game_settings["characters"] = (game_settings["characters"][0], game_settings["characters"][1])
     if train_id == "sfiii3n":
         game_settings["super_art"] = (game_settings["super_art"], game_settings["super_art"])
@@ -119,7 +112,31 @@ def main(
         game_settings["fighting_style"] = (game_settings["fighting_style"], game_settings["fighting_style"])
         game_settings["ultimate_style"] = (game_settings["ultimate_style"], game_settings["ultimate_style"])
     settings.update(game_settings)
-    settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, settings)
+
+    train_settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, settings)
+    game_settings["characters"] = eval_characters[0]
+    game_settings["characters"] = (game_settings["characters"][0], game_settings["characters"][1])
+    settings.update(game_settings)
+    eval_settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, settings)
+
+    # Load wrappers settings as dictionary
+    settings_params["wrappers_settings"]["role_relative"] = False
+    custom_wrappers_settings = {"wrappers": [
+        [ActionWrapper2P, {"action_space": action_space, "opp_type": "random"}],
+        [DefTrainWrapper, {}], # Important to place reward shaping wrappers before obs filtering wrappers
+        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
+    ]}
+    settings_params["wrappers_settings"].update(custom_wrappers_settings)
+
+    train_wrappers = settings_params["wrappers_settings"].copy()
+    if train_type == "interleaved":
+        train_wrappers["wrappers"].append([InterleavingWrapper, {"character_list": train_characters}])
+    train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
+
+    eval_wrappers = settings_params["wrappers_settings"].copy()
+    if train_type == "interleaved":
+        eval_wrappers["wrappers"].append([InterleavingWrapper, {"character_list": eval_characters}])
+    eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
 
     eval_results = {}
     for seed in seeds:
@@ -129,13 +146,13 @@ def main(
 
         # Initialise envs and wrap in transfer wrappers
         train_env, eval_env = utils.train_eval_split(
-            game_id=settings.game_id,
+            game_id=train_settings.game_id,
             num_train_envs=num_train_envs,
             num_eval_envs=num_eval_envs,
-            train_settings=settings,
-            train_wrappers=wrappers_settings,
-            eval_settings=settings,
-            eval_wrappers=wrappers_settings,
+            train_settings=train_settings,
+            train_wrappers=train_wrappers,
+            eval_settings=eval_settings,
+            eval_wrappers=eval_wrappers,
             seed=seed
         )
     
@@ -201,20 +218,20 @@ def main(
             filename_prefix=model_checkpoint + "_"
         )
         arcade_metrics_callback = custom_callbacks.ArcadeMetricsTrainCallback(verbose=0)
-        # stop_training = StopTrainingOnNoModelImprovement(max_no_improvement_evals=3, min_evals=5, verbose=1)
-        # eval_callback = custom_callbacks.ArcadeMetricsEvalCallback(
-        #     eval_env=eval_env,
-        #     n_eval_episodes=n_eval_episodes * num_eval_envs, # Ensure each env completes required num of eval episodes
-        #     eval_freq=max(eval_freq // num_train_envs, 1),
-        #     log_path=save_path,
-        #     best_model_save_path=save_path,
-        #     deterministic=True,
-        #     render=False,
-        #     # callback_after_eval=stop_training,
-        #     verbose=1,
-        #     episode_num=None,
-        # )
-        callback_list = CallbackList([auto_save_callback, arcade_metrics_callback])
+        stop_training = StopTrainingOnNoModelImprovement(max_no_improvement_evals=3, min_evals=5, verbose=1)
+        eval_callback = custom_callbacks.ArcadeMetricsEvalCallback(
+            eval_env=eval_env,
+            n_eval_episodes=n_eval_episodes * num_eval_envs, # Ensure each env completes required num of eval episodes
+            eval_freq=max(eval_freq // num_train_envs, 1),
+            log_path=save_path,
+            best_model_save_path=save_path,
+            deterministic=True,
+            render=False,
+            # callback_after_eval=stop_training,
+            verbose=1,
+            episode_num=None,
+        )
+        callback_list = CallbackList([auto_save_callback, arcade_metrics_callback, eval_callback])
         
         try:
             agent.learn(
@@ -237,17 +254,19 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
-    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
-    parser.add_argument("--trainID", type=str, required=False, help="Specific game to train on", default="sfiii3n")
-    parser.add_argument("--numTrainEnvs", type=int, required=False, help="Number of training environments", default=8)
-    parser.add_argument("--numEvalEnvs", type=int, required=False, help="Number of evaluation environments", default=4)
+    parser.add_argument("--policy_cfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
+    parser.add_argument("--settings_cfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
+    parser.add_argument("--train_id", type=str, required=False, help="Specific game to train on", default="sfiii3n")
+    parser.add_argument("--train_type", type=str, required=False, help="Interleaved or sequential training, or none", default=None)
+    parser.add_argument("--num_train_envs", type=int, required=False, help="Number of training environments", default=8)
+    parser.add_argument("--num_eval_envs", type=int, required=False, help="Number of evaluation environments", default=4)
     opt = parser.parse_args()
 
     main(
-        policy_cfg=opt.policyCfg,
-        settings_cfg=opt.settingsCfg,
-        train_id=opt.trainID,
-        num_train_envs=opt.numTrainEnvs,
-        num_eval_envs=opt.numEvalEnvs,
+        policy_cfg=opt.policy_cfg,
+        settings_cfg=opt.settings_cfg,
+        train_id=opt.train_id,
+        num_train_envs=opt.num_train_envs,
+        num_eval_envs=opt.num_eval_envs,
+        train_type=opt.train_type,
     )

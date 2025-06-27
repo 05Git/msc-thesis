@@ -22,7 +22,7 @@ def main(
     policy_cfg: str,
     settings_cfg: str, 
     train_id: str | None, 
-    train_type: str,
+    train_type: str | None,
     num_train_envs: int,
     num_eval_envs: int,
 ):    
@@ -94,8 +94,8 @@ def main(
 
     # Load wrappers settings as dictionary
     custom_wrappers_settings = {"wrappers": [
-        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
         [ActionWrapper1P, {"action_space": settings_params["settings"]["shared"]["action_space"]}],
+        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
     ]}
     settings_params["wrappers_settings"].update(custom_wrappers_settings)
     # Load shared settings
@@ -157,12 +157,12 @@ def main(
             eval_settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
 
             train_wrappers = settings_params["wrappers_settings"].copy()
-            if len(train_characters) > 1:
+            if train_type == "interleaved":
                 train_wrappers["wrappers"].append([InterleavingWrapper, {"character_list": train_characters}])
             train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
 
             eval_wrappers = settings_params["wrappers_settings"].copy()
-            if len(eval_characters) > 1:
+            if train_type == "interleaved":
                 eval_wrappers["wrappers"].append([InterleavingWrapper, {"character_list": eval_characters}])
             eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
 
@@ -284,7 +284,7 @@ if __name__ == "__main__":
     parser.add_argument("--policy_cfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
     parser.add_argument("--settings_cfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
     parser.add_argument("--train_id", type=str, required=False, help="Specific game to train on", default="sfiii3n")
-    parser.add_argument("--train_type", type=str, required=False, help="Sequential or interleaved training", default="interleaved")
+    parser.add_argument("--train_type", type=str, required=False, help="Sequential or interleaved training", default=None)
     parser.add_argument("--num_train_envs", type=int, required=False, help="Number of train envs", default=8)
     parser.add_argument("--num_eval_envs", type=int, required=False, help="Number of evaluation envs", default=4)
     opt = parser.parse_args()

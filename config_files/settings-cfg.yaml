@@ -24,8 +24,8 @@ settings:
   sfiii3n:
     game_id: "sfiii3n"
     characters: 
-      train: ["Ryu"]
-      eval: [ "Ken" ]
+      train: [["Ryu","Alex"]]
+      eval: [["Ryu","Alex"]]
     difficulty: 1
     super_art: 1
 

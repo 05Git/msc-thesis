@@ -11,8 +11,9 @@ from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env, Environme
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecTransposeImage
+from stable_baselines3.common.utils import set_random_seed
 
-import custom_wrappers
+from custom_wrappers import PixelObsWrapper, ActionWrapper1P
 import custom_callbacks
 import utils
 
@@ -69,13 +70,17 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool,
     settings = load_settings_flat_dict(EnvironmentSettings, settings)
     
     # Load wrappers settings as dictionary
+    custom_wrappers_settings = {"wrappers": [
+        [ActionWrapper1P, {"action_space": settings_params["settings"]["shared"]["action_space"]}],
+        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
+    ]}
+    settings_params["wrappers_settings"].update(custom_wrappers_settings)
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
 
     eval_results = {}
     eval_characters = eval_params["characters"]
     for seed in seeds:
         eval_results.update({seed : {}})
-        utils.set_global_seed(seed)
 
         env, num_envs = make_sb3_env(
             game_id=settings.game_id,
@@ -83,17 +88,8 @@ def main(policy_cfg: str, settings_cfg: str, eval_cfg: str, deterministic: bool,
             wrappers_settings=wrappers_settings,
             seed=seed
         )
-        if settings.action_space == SpaceTypes.DISCRETE:
-            env = custom_wrappers.VecEnvDiscreteTransferWrapper(
-                venv=env,
-                stack_frames=wrappers_settings.stack_frames,
-            )
-        else:
-            env = custom_wrappers.VecEnvMDTransferWrapper(
-                venv=env,
-                stack_frames=wrappers_settings.stack_frames,
-            )
         env = VecTransposeImage(env)
+        set_random_seed(seed)
 
         reward_infos = np.zeros(len(model_paths), dtype=np.float64)
         episode_lengths = np.zeros(len(model_paths), dtype=np.float64)

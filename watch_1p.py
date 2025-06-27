@@ -36,8 +36,8 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str, agent_path: str | Non
 
     # Load wrappers settings as dictionary
     custom_wrappers_settings = {"wrappers": [
-        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
         [ActionWrapper1P, {"action_space": settings_params["settings"]["shared"]["action_space"]}],
+        [PixelObsWrapper, {"stack_frames": settings_params["wrappers_settings"]["stack_frames"]}],
     ]}
     settings_params["wrappers_settings"].update(custom_wrappers_settings)
     wrappers_settings = load_settings_flat_dict(WrappersSettings, settings_params["wrappers_settings"])
@@ -102,10 +102,10 @@ def main(policy_cfg: str, settings_cfg: str, game_id: str, agent_path: str | Non
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policyCfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
-    parser.add_argument("--settingsCfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
-    parser.add_argument("--gameID", type=str, required=False, help="Specific game to evaluate", default="sfiii3n")
-    parser.add_argument("--agentPath", type=str, required=False, help="Path to pre-trained agent", default=None)
+    parser.add_argument("--policy_cfg", type=str, required=False, help="Policy config", default="config_files/ppo-cfg.yaml")
+    parser.add_argument("--settings_cfg", type=str, required=False, help="Env settings config", default="config_files/settings-cfg.yaml")
+    parser.add_argument("--game_id", type=str, required=False, help="Specific game to evaluate", default="sfiii3n")
+    parser.add_argument("--agent_path", type=str, required=False, help="Path to pre-trained agent", default=None)
     opt = parser.parse_args()
 
-    main(opt.policyCfg, opt.settingsCfg, opt.gameID, opt.agentPath)
+    main(opt.policy_cfg, opt.settings_cfg, opt.game_id, opt.agent_path)
