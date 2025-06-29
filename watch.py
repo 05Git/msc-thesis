@@ -3,10 +3,10 @@ import argparse
 import configs
 import diambra.arena
 import torch as th
+import custom_wrappers as cw
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
-
 
 # diambra run -g python watch.py --watch_id _ --num_players _ --policy_path _ --deterministic
 
@@ -16,17 +16,7 @@ def main(
     policy_path: str,
     deterministic: bool,
 ):
-    # Game IDs
-    game_ids = [
-        "sfiii3n",
-        "samsh5sp",
-        "kof98umh",
-        "umk3",
-    ]
-    assert game_id in game_ids, f"Invalid game id ({game_id}), available ids: [{game_ids}]"
-
-    # Device
-    device = th.device("cuda" if th.cuda.is_available() else "cpu")
+    assert game_id in configs.game_ids, f"Invalid game id ({game_id}), available ids: [{configs.game_ids}]"
 
     # Load configs
     settings_config = configs.env_settings
@@ -48,7 +38,7 @@ def main(
     )
     # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
     env = VecTransposeImage(DummyVecEnv([lambda: env]))
-
+    
     model_checkpoint = ppo_config["model_checkpoint"]
     load_path = os.path.join(configs.model_folder, f"seed_{settings_config['seed']}")
     checkpoint_path = os.path.join(load_path, model_checkpoint) if not policy_path else policy_path
@@ -56,17 +46,25 @@ def main(
         path=checkpoint_path,
         env=env,
         policy_kwargs=configs.policy_kwargs,
-        device=device,
+        device=configs.ppo_settings["device"],
         custom_objects={
             "action_space" : env.action_space,
             "observation_space" : env.observation_space,
         }
     )
-
     obs = env.reset()
     while True:
+        # dist = agent.policy.get_distribution(th.tensor(obs).float().to(agent.device))
+        # move_logits = dist.distribution[0].logits
+        # act_logits = dist.distribution[1].logits
+        # print("Move Logits:", move_logits)
+        # print("Act Logits:", act_logits)
         actions, _ = agent.predict(obs, deterministic=deterministic)
+        # print(f"Actions: {actions}")
         obs, rew, done, info = env.step(actions)
+        # print(f"Observation: {obs}")
+        # print(f"Reward: {rew}")
+        # print(f"Info: {info}")
         if done:
             break
 

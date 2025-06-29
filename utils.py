@@ -6,12 +6,14 @@ import gymnasium as gym
 import diambra.arena
 
 from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings
+from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common import type_aliases
 from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, VecMonitor, is_vecenv_wrapped
 from typing import Any, Callable, Optional, Union
+from torch.nn import functional as thF
 
 
 def train_eval_split(game_id: str, num_train_envs: int, num_eval_envs: int,
@@ -252,3 +254,70 @@ def evaluate_policy_with_arcade_metrics(
     if return_episode_rewards:
         return episode_rewards, episode_lengths, stages_completed, arcade_runs_completed
     return (mean_reward, std_reward), (mean_stages, std_stages), (mean_arcade_runs, std_arcade_runs)
+
+
+def eval_student_teacher_entropy(
+    student: PPO,
+    teachers: Union[PPO, list[PPO]],
+    env: gym.Env,
+    n_eval_episodes: int = 10,
+    deterministic: bool = True,
+):
+    if not isinstance(env, VecEnv):
+        env = DummyVecEnv([lambda: env])
+
+    if not type(teachers) == list:
+        teachers = [teachers]
+
+    n_envs = env.num_envs
+    episode_counts = np.zeros(n_envs, dtype="int")
+    episode_count_targets = np.array([(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int")
+
+    teacher_probability_scores = np.zeros((len(teachers), len(env.action_space)), dtype="int")
+    steps = 0
+
+    observations = env.reset()
+    s_states, t_states = None, None
+    episode_starts = np.ones((env.num_envs,), dtype=bool)
+    while (episode_counts < episode_count_targets).any():
+        steps += 1
+        teacher_actions = []
+        for teacher in teachers:
+            t_acts, t_states = teacher.predict(
+                observations,
+                state=t_states,
+                episode_start=episode_starts,
+                deterministic=deterministic,
+            )
+            teacher_actions.append(t_acts)
+
+        s_acts, s_states = student.predict(
+            observations,
+            state=s_states,
+            episode_start=episode_starts,
+            deterministic=deterministic,
+        )
+
+        for idx, t_acts in enumerate(teacher_actions):
+            probability = np.where(t_acts == s_acts, 1, 0)
+            teacher_probability_scores[idx] += probability
+        
+        observations, rewards, dones, infos = env.step(s_acts)
+        for i in range(n_envs):
+            if episode_counts[i] < episode_count_targets[i]:
+                if dones[i]:
+                    episode_counts[i] += 1
+    
+    # TODO: Check this is working as intended
+    # teacher_prob_mean = np.array([prob_scores / steps for prob_scores in teacher_probability_scores])
+    # for i in range(len(teacher_probability_scores)):
+    #     sumup = 0
+    #     for j in range(len(teacher_probability_scores[i])):
+    #         sumup += (teacher_probability_scores[i][j] - teacher_prob_mean[i])**2
+    # teacher_prob_std = np.array([
+    #     np.sqrt(
+    #         (teacher_probability_scores[i] - teacher_prob_mean[i]**2) / len(teacher_probability_scores[i]) - 1
+    #     )
+    # for i in range(len(teacher_probability_scores))])
+
+    return teacher_probability_scores, teacher_prob_mean, teacher_prob_std

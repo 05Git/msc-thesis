@@ -20,17 +20,7 @@ def main(
     dir_name: str,
     policy_path: str,
 ):
-    # Game IDs
-    game_ids = [
-        "sfiii3n",
-        "samsh5sp"
-        "kof98umh",
-        "umk3",
-    ]
-    assert eval_id in game_ids, f"Invalid game id ({eval_id}), available ids: [{game_ids}]"
-
-    # Device
-    device = th.device("cuda" if th.cuda.is_available() else "cpu")
+    assert eval_id in configs.game_ids, f"Invalid game id ({eval_id}), available ids: [{configs.game_ids}]"
 
     # Load configs
     settings_config = configs.env_settings
@@ -59,7 +49,7 @@ def main(
         path=checkpoint_path,
         env=eval_env,
         policy_kwargs=configs.policy_kwargs,
-        device=device,
+        device=configs.ppo_settings["device"],
         custom_objects={
             "action_space" : eval_env.action_space,
             "observation_space" : eval_env.observation_space,
@@ -69,7 +59,7 @@ def main(
     reward_infos, episode_lengths, stages_infos, arcade_infos = evaluate_policy_with_arcade_metrics(
         model=agent,
         env=eval_env,
-        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"] * num_envs,
+        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
         deterministic=deterministic,
         return_episode_rewards=True,
     )

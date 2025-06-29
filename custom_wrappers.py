@@ -1,7 +1,45 @@
 import gymnasium as gym
 import numpy as np
+
 from diambra.arena import Roles
+from stable_baselines3 import PPO
 from typing import Optional, Union
+
+
+class TeacherInputWrapper(gym.ObservationWrapper):
+    def __init__(
+        self,
+        env: gym.Env,
+        teachers: list[PPO],
+        deterministic: bool = True,
+        teacher_action_space: str = "multi_discrete",
+    ):
+        super().__init__(env)
+        self.env = env
+        self.teachers = teachers
+        self.deterministic = deterministic
+        if teacher_action_space == "multi_discrete":
+            action_space_shape = env.action_space.nvec
+        elif teacher_action_space == "discrete":
+            action_space_shape = env.action_space.n
+        else:
+            raise Exception(f"Invalid action_space input argument: '{teacher_action_space}'\nValid arguments: 'discrete', 'multi_discrete'")
+        self.observation_space = gym.spaces.Dict({
+            "image": env.observation_space,
+            "teacher_actions": gym.spaces.Box(
+                low=np.array([np.zeros_like(action_space_shape)] * len(teachers)).reshape(len(teachers), len(action_space_shape)),
+                high=np.array([action_space_shape] * len(teachers)).reshape(len(teachers), len(action_space_shape)),
+                dtype=np.uint8,
+            )
+        })
+
+    def observation(self, observation):
+        teacher_actions = []
+        for teacher in self.teachers:
+            action, _ = teacher.predict(observation, deterministic=self.deterministic)
+            teacher_actions.append(action)
+        teacher_actions = np.array(teacher_actions)
+        return {"image": observation, "teacher_actions": teacher_actions}
 
 
 class PixelObsWrapper(gym.Wrapper):
@@ -22,6 +60,60 @@ class PixelObsWrapper(gym.Wrapper):
         else:
             obs, reward, terminated, truncated, info = step_result
         return obs["frame"], reward, terminated, truncated, info
+    
+
+class AddLastActions(gym.Wrapper):
+    def __init__(self, env, action_space: str = "multi_discrete"):
+        super().__init__(env)
+        self.env = env
+        if action_space == "multi_discrete":
+            action_space_shape = env.action_space.nvec
+        elif action_space == "discrete":
+            action_space_shape = env.action_space.n
+        else:
+            raise Exception(f"Invalid action_space input argument: '{action_space}'\nValid arguments: 'discrete', 'multi_discrete'")
+        if type(env.observation_space) == gym.spaces.Box:
+            self.observation_space = gym.spaces.Dict({
+                "image": env.observation_space,
+                "last_actions": gym.spaces.Box(
+                    low=np.zeros_like(action_space_shape),
+                    high=action_space_shape,
+                    dtype=np.uint8,
+                )
+            })
+        elif type(env.observation_space) == gym.space.Dict:
+            self.observation_space = env.observation_space
+            self.observation_space.update({
+                "last_actions": gym.spaces.Box(
+                    low=np.zeros_like(action_space_shape),
+                    high=action_space_shape,
+                    dtype=np.uint8,
+            )})
+        else:
+            raise Exception("Base env observation space must be Box or Dict")
+        self.last_actions = np.zeros_like(action_space_shape)
+    
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        if type(obs) == dict:
+            obs.update({"last_actions": self.last_actions})
+        else:
+            obs = {"image": obs, "last_actions": self.last_actions}
+        return obs, info
+    
+    def step(self, action):
+        step_result = self.env.step(action)
+        if len(step_result) == 4:
+            obs, reward, terminated, info = step_result
+            truncated = False
+        else:
+            obs, reward, terminated, truncated, info = step_result
+        self.last_actions = action
+        if type(obs) == dict:
+            obs.update({"last_actions": self.last_actions})
+        else:
+            obs = {"image": obs, "last_actions": self.last_actions}
+        return obs, reward, terminated, truncated, info
 
 
 class ActionWrapper1P(gym.Wrapper):
@@ -42,6 +134,8 @@ class ActionWrapper1P(gym.Wrapper):
             self.action_space = gym.spaces.Discrete(max_actions)
         else:
             raise Exception(f"Invalid action_space input argument: '{action_space}'\nValid arguments: 'discrete', 'multi_discrete'")
+        for max_act, valid_act in zip(max_actions, self.valid_actions):
+            assert valid_act <= max_act
         self.no_op = no_op if type(no_op) == list else [no_op for _ in range(len(self.valid_actions))]
         assert len(self.no_op) == len(self.valid_actions)
         for no_op_act, valid_act in zip(self.no_op, self.valid_actions):
@@ -79,6 +173,8 @@ class ActionWrapper2P(gym.Wrapper):
             self.action_space = gym.spaces.Discrete(max_actions)
         else:
             raise Exception(f"Invalid action_space input argument: '{action_space}'\nValid arguments: 'discrete', 'multi_discrete'")
+        for max_act, valid_act in zip(max_actions, self.valid_actions):
+            assert valid_act <= max_act
         self.no_op = no_op if type(no_op) == list else [no_op for _ in range(len(self.valid_actions))]
         assert len(self.no_op) == len(self.valid_actions)
         for no_op_act, valid_act in zip(self.no_op, self.valid_actions):

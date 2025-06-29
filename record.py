@@ -15,14 +15,15 @@ from stable_baselines3.common.utils import set_random_seed
 
 def main(
     game_id: str,
-    use_controller: bool, 
-    agent_path: str | None,
+    use_controller: bool,
+    agent_path: str,
     num_players: int,
     num_episodes_to_record: int, 
     recording_folder: str,
     rec_username: str,
     deterministic: bool,
 ):
+    assert game_id in configs.game_ids, f"Invalid game id ({game_id}), available ids: [{configs.game_ids}]"
     assert not (use_controller and agent_path), "Haven't implemented human vs agent yet"
 
     # Set up seeds

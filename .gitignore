@@ -11,3 +11,4 @@
 /.vscode/
 /__pycache__/
 /sb3_distill/
+sb3-imitation.yaml

@@ -1,11 +1,9 @@
 import os
+import torch as th
 import custom_wrappers as cw
-from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings, SpaceTypes, load_settings_flat_dict
 
-folders = {
-    "parent_dir": "test",
-    "model_name": "test_policy",
-}
+from stable_baselines3 import PPO
+from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings, SpaceTypes, load_settings_flat_dict
 
 env_settings = {
     "1_player": {
@@ -20,7 +18,7 @@ env_settings = {
         "sfiii3n": {
             "train": {
                 "game_id": "sfiii3n",
-                "characters": ["Ryu"],
+                "characters": "Ryu",
                 "difficulty": 1,
                 "super_art": 1,
             },
@@ -43,7 +41,7 @@ env_settings = {
         },
         "sfiii3n": {
             "train": {
-                "characters": [("Ryu", "Alex")],
+                "characters": ("Ryu", "Alex"),
                 "difficulty": 1,
                 "super_art": (1, 1),
             },
@@ -54,7 +52,9 @@ env_settings = {
             },
         },
     },
-    "seed": 0
+    "seed": 0,
+    "num_train_envs": 8,
+    "num_eval_envs": 4,
 }
 
 wrappers_settings = {
@@ -72,6 +72,11 @@ wrappers_settings = {
     "wrappers": [],
 }
 
+teacher_paths = [
+    # "/home/oscar/github/msc-thesis/final/attack_expert_rand/model/seed_0/500000.zip",
+    # "/home/oscar/github/msc-thesis/final/def_expert_rand/model/seed_0/500000.zip",
+]
+
 wrappers_1p = [
     [cw.ActionWrapper1P, {
         "action_space": "discrete" if env_settings["1_player"]["shared"]["action_space"] == SpaceTypes.DISCRETE else "multi_discrete",
@@ -86,25 +91,37 @@ wrappers_2p = [
         "action_space": "discrete" if env_settings["2_player"]["shared"]["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
         "no_op": 0,
         "max_actions": [9,11],
-        "opp_type": "random",
+        "opp_type": "no_op",
     }],
     [cw.PixelObsWrapper, {"stack_frames": wrappers_settings["stack_frames"]}],
 ]
 
+folders = {
+    "parent_dir": "test",
+    "model_name": "kill_me",
+}
+
 policy_kwargs = {}
+
+n_steps = 128
+nminibatches = 8
+batch_lambda = 8
+batch_size = ((n_steps * env_settings["num_train_envs"]) // nminibatches) * batch_lambda
+assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 
 ppo_settings = {
     "policy": "CnnPolicy",
-    "model_checkpoint": "2000",
-    "time_steps": 2000,
+    "model_checkpoint": "0",
+    "time_steps": 500_000,
+    "device": th.device("cuda" if th.cuda.is_available else "cpu"),
     "gamma": 0.99,
     "train_lr": (2.5e-5, 2.5e-6),
     "finetune_lr": (5.0e-5, 2.5e-6),
     "train_cr": (0.15, 0.025),
     "finetune_cr": (0.075, 0.025),
-    "batch_size": 1024,
+    "batch_size": batch_size,
     "n_epochs": 10,
-    "n_steps": 128,
+    "n_steps": n_steps,
     "gae_lambda": 0.95,
     "ent_coef": 0.,
     "vf_coef": 0.5,
@@ -117,8 +134,8 @@ ppo_settings = {
 }
 
 callbacks_settings = {
-    "autosave_freq": 100_000,
-    "n_eval_episodes": 1,
+    "autosave_freq": 50_000,
+    "n_eval_episodes": 100,
     "eval_freq": 100_000,
     "evaluate_during_training": False,
     "stop_training_if_no_improvement": False,
@@ -126,7 +143,7 @@ callbacks_settings = {
 
 imitation_settings = {
     "bc": {
-        "n_epochs": 10
+        "n_epochs": 100
     },
     "dagger": {
         "n_steps": 100_000
@@ -135,6 +152,7 @@ imitation_settings = {
         "n_steps": 100_000
     },
 }
+
 
 def load_1p_settings(game_id: str):
     general_settings = env_settings["1_player"]["shared"]
@@ -149,7 +167,6 @@ def load_1p_settings(game_id: str):
             "character_list": train_settings["characters"],
             "one_p_env": True,
         }])
-    train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
     
     eval_wrappers = wrappers_settings.copy()
     eval_wrappers["wrappers"] = wrappers_1p
@@ -158,11 +175,10 @@ def load_1p_settings(game_id: str):
             "character_list": eval_settings["characters"],
             "one_p_env": True,
         }])
-    eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
     
     if type(train_settings["characters"]) == list:
         train_settings["characters"] = train_settings["characters"][0]
-        
+    
     if type(eval_settings["characters"]) == list:
         eval_settings["characters"] = eval_settings["characters"][0]
 
@@ -170,8 +186,31 @@ def load_1p_settings(game_id: str):
     eval_settings.update(general_settings)
     train_settings = load_settings_flat_dict(EnvironmentSettings, train_settings)
     eval_settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
-
+    train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
+    eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
+    
+    if teacher_paths:
+        teachers = []
+        for path in teacher_paths:
+            teacher = PPO.load(path=path, device=ppo_settings["device"])
+            teachers.append(teacher)
+        teacher_wrapper = [cw.TeacherInputWrapper, {
+                "teachers": teachers,
+                "deterministic": True,
+                "teacher_action_space": "discrete" if general_settings["action_space"] == SpaceTypes.DISCRETE else "multi_discrete"
+        }]
+        train_wrappers.wrappers.append(teacher_wrapper)
+        eval_wrappers.wrappers.append(teacher_wrapper)
+    
+    # train_wrappers.wrappers.append(
+    #     [cw.AddLastActions, {"action_space": "discrete" if general_settings["action_space"] == SpaceTypes.DISCRETE else "multi_discrete"}]
+    # )
+    # eval_wrappers.wrappers.append(
+    #     [cw.AddLastActions, {"action_space": "discrete" if general_settings["action_space"] == SpaceTypes.DISCRETE else "multi_discrete"}]
+    # )
+    
     return train_settings, eval_settings, train_wrappers, eval_wrappers
+
 
 def load_2p_settings(game_id: str):
     general_settings = env_settings["2_player"]["shared"]
@@ -181,6 +220,7 @@ def load_2p_settings(game_id: str):
 
     wrappers_settings["filter_keys"].append("P1_health")
     wrappers_settings["filter_keys"].append("P2_health")
+
     train_wrappers = wrappers_settings.copy()
     train_wrappers["wrappers"] = wrappers_2p
     if type(train_settings["characters"]) == list:
@@ -188,7 +228,6 @@ def load_2p_settings(game_id: str):
             "character_list": train_settings["characters"],
             "one_p_env": False,
         }])
-    train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
     
     eval_wrappers = wrappers_settings.copy()
     eval_wrappers["wrappers"] = wrappers_2p
@@ -197,7 +236,6 @@ def load_2p_settings(game_id: str):
             "character_list": eval_settings["characters"],
             "one_p_env": False,
         }])
-    eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
 
     if type(train_settings["characters"]) == list:
         train_settings["characters"] = train_settings["characters"][0]
@@ -209,6 +247,28 @@ def load_2p_settings(game_id: str):
     eval_settings.update(general_settings)
     train_settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, train_settings)
     eval_settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, eval_settings)
+    train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
+    eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
+
+    if teacher_paths:
+        teachers = []
+        for path in teacher_paths:
+            teacher = PPO.load(path=path, device=ppo_settings["device"])
+            teachers.append(teacher)
+        teacher_wrapper = [cw.TeacherInputWrapper, {
+                "teachers": teachers,
+                "deterministic": True,
+                "teacher_action_space": "discrete" if general_settings["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete"
+        }]
+        train_wrappers.wrappers.append(teacher_wrapper)
+        eval_wrappers.wrappers.append(teacher_wrapper)
+
+    # train_wrappers.wrappers.append(
+    #     [cw.AddLastActions, {"action_space": "discrete" if general_settings["action_space"] == SpaceTypes.DISCRETE else "multi_discrete"}]
+    # )
+    # eval_wrappers.wrappers.append(
+    #     [cw.AddLastActions, {"action_space": "discrete" if general_settings["action_space"] == SpaceTypes.DISCRETE else "multi_discrete"}]
+    # )
     
     return train_settings, eval_settings, train_wrappers, eval_wrappers
 
@@ -228,3 +288,10 @@ tensor_board_folder = os.path.join(
 )
 os.makedirs(model_folder, exist_ok=True)
 os.makedirs(tensor_board_folder, exist_ok=True)
+
+game_ids = [
+    "sfiii3n",
+    # "samsh5sp",
+    # "kof98umh",
+    # "umk3",
+]

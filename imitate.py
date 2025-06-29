@@ -22,7 +22,7 @@ from imitation.util.networks import RunningNorm
 from imitation.data import rollout
 from imitation.util import logger as imit_logger
 
-# diambra run -s _ python imitation.py --dataset_path _ --train_id _ --num_train_envs _ --num_eval_envs _ --agent_num _ --policy_path _ --deterministic --num_players _
+# diambra run -s _ python imitation.py --dataset_path _ --train_id _ --agent_num _ --policy_path _ --deterministic --num_players _
 
 def get_transitions(data_loader: DiambraDataLoader, agent_num: int | None):
     n_episodes = len(data_loader.episode_files) # Number of datasets
@@ -63,22 +63,13 @@ def get_transitions(data_loader: DiambraDataLoader, agent_num: int | None):
 
 def main(
     dataset_path_input: str, 
-    train_id: str, 
-    num_train_envs: int, 
-    num_eval_envs: int,
+    train_id: str,
     agent_num: int,
     policy_path: str,
     deterministic: bool,
     num_players: int,
 ):
-    # Game IDs
-    game_ids = [
-        "sfiii3n",
-        "kof98umh",
-        "umk3",
-        "samsh5sp"
-    ]
-    assert train_id in game_ids, f"Invalid game id ({train_id}), available ids: [{game_ids}]"
+    assert train_id in configs.game_ids, f"Invalid game id ({train_id}), available ids: [{configs.game_ids}]"
 
     # Load configs
     settings_config = configs.env_settings
@@ -89,9 +80,6 @@ def main(
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))
         dataset_path = os.path.join(base_path, "dataset")
-
-    # Device
-    device = th.device("cuda" if th.cuda.is_available() else "cpu")
 
     # Set up imitation transitions
     imitation_data_loader = DiambraDataLoader(dataset_path)
@@ -105,6 +93,8 @@ def main(
     else:
         train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_2p_settings(game_id=train_id)
 
+    num_train_envs = settings_config["num_train_envs"] 
+    num_eval_envs = settings_config["num_eval_envs"]
     train_env, eval_env = train_eval_split(
         game_id=train_id,
         num_train_envs=num_train_envs,
@@ -134,7 +124,7 @@ def main(
             clip_range_vf=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
             policy_kwargs=configs.policy_kwargs,
             tensorboard_log=configs.tensor_board_folder,
-            device=device,
+            device=configs.ppo_settings["device"],
             custom_objects={
                 "action_space" : train_env.action_space,
                 "observation_space" : train_env.observation_space,
@@ -164,7 +154,7 @@ def main(
             stats_window_size=ppo_config["stats_window_size"],
             target_kl=ppo_config["target_kl"],
             tensorboard_log=configs.tensor_board_folder,
-            device=device,
+            device=configs.ppo_settings["device"],
             seed=settings_config["seed"]
         )
 
@@ -200,7 +190,7 @@ def main(
         demonstrations=transitions,
         rng=np.random.default_rng(seed=configs.env_settings["seed"]),
         policy=agent.policy,
-        device=device,
+        device=configs.ppo_settings["device"],
         custom_logger=imit_log,
     )
 
@@ -208,7 +198,7 @@ def main(
     reward_infos, episode_lengths, stages_infos, arcade_infos = evaluate_policy_with_arcade_metrics(
         model=agent,
         env=eval_env,
-        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"] * num_eval_envs,
+        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
         deterministic=deterministic,
         return_episode_rewards=True,
     )
@@ -222,19 +212,22 @@ def main(
     })
 
     # Imitation training
-    # gail_trainer.train(configs.imitation_settings["gail"]["n_steps"], callback=None)
-    bc_trainer.train(n_epochs=configs.imitation_settings["bc"]["n_epochs"])
-    # with tempfile.TemporaryDirectory(prefix="dagger_example_") as tmpdir:
-    #     print(tmpdir)
-    #     dagger_trainer = SimpleDAggerTrainer(
-    #         venv=train_env,
-    #         scratch_dir=tmpdir,
-    #         expert_policy=agent,
-    #         bc_trainer=bc_trainer,
-    #         rng=np.random.default_rng(seed=seed),
-    #         custom_logger=imit_log,
-    #     )
-    #     dagger_trainer.train(configs.imitation_settings["dagger"]["n_steps"])
+    try:
+        bc_trainer.train(n_epochs=configs.imitation_settings["bc"]["n_epochs"])
+        # gail_trainer.train(configs.imitation_settings["gail"]["n_steps"], callback=None)
+        # with tempfile.TemporaryDirectory(prefix="dagger_example_") as tmpdir:
+        #     print(tmpdir)
+        #     dagger_trainer = SimpleDAggerTrainer(
+        #         venv=train_env,
+        #         scratch_dir=tmpdir,
+        #         expert_policy=agent,
+        #         bc_trainer=bc_trainer,
+        #         rng=np.random.default_rng(seed=seed),
+        #         custom_logger=imit_log,
+        #     )
+        #     dagger_trainer.train(configs.imitation_settings["dagger"]["n_steps"])
+    except KeyboardInterrupt:
+        print("Ending imitation learning early, saving model")
 
     # Save imitated policy
     imitation_folder = os.path.join(configs.model_folder, f"seed_{settings_config['seed']}", "bc_trainer")
@@ -244,7 +237,7 @@ def main(
     reward_infos, episode_lengths, stages_infos, arcade_infos = evaluate_policy_with_arcade_metrics(
         model=agent,
         env=eval_env,
-        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"] * num_eval_envs,
+        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
         deterministic=deterministic,
         return_episode_rewards=True,
     )
@@ -279,8 +272,6 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_path", type=str, required=True, help="Path to imitation trajectories")
     parser.add_argument("--train_id", type=str, required=False, help="Specific game to train on", default="sfiii3n")
     parser.add_argument("--num_players", type=int, required=False, help="Number of players in the env", default=1)
-    parser.add_argument("--num_train_envs", type=int, required=False, help="Number of train envs", default=8)
-    parser.add_argument("--num_eval_envs", type=int, required=False, help="Number of evaluation envs", default=4)
     parser.add_argument("--policy_path", type=str, required=False, help="Path to load pre-trained policy", default=None)
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Whether to follow a deterministic or stochastic policy", default=True)
     parser.add_argument("--agent_num", type=int, required=False, help="Agent number (if trajectories come from multiagent env)", default=None)
@@ -289,8 +280,6 @@ if __name__ == "__main__":
     main(
         dataset_path_input=opt.dataset_path,
         train_id=opt.train_id,
-        num_train_envs=opt.num_train_envs,
-        num_eval_envs=opt.num_eval_envs,
         agent_num=opt.agent_num,
         policy_path=opt.policy_path,
         deterministic=opt.deterministic,
