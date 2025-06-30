@@ -7,6 +7,7 @@ import custom_wrappers as cw
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
+from diambra.arena import SpaceTypes
 
 # diambra run -g python watch.py --watch_id _ --num_players _ --policy_path _ --deterministic
 
@@ -30,6 +31,11 @@ def main(
         settings, _, wrappers, _ = configs.load_2p_settings(game_id=game_id)
     # step_ratio > 1 will make gameplay too fast to observe normally
     settings.step_ratio = 1
+    if deterministic:
+        wrappers.wrappers.append([cw.NoOpWrapper, {
+            "action_space_type": "discrete" if settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+            "no_attack": 0,
+        }])
 
     env = diambra.arena.make(
         game_id=game_id,

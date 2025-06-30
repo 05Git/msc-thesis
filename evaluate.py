@@ -4,12 +4,14 @@ import argparse
 import configs
 import torch as th
 import numpy as  np
+import custom_wrappers as cw
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.utils import set_random_seed
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env
 from utils import evaluate_policy_with_arcade_metrics
+from diambra.arena import SpaceTypes
 
 # diambra run -s _ python evaluate.py --eval_id _ --num_players _ --dir_name _ --policy_path _ --deterministic
 
@@ -32,6 +34,12 @@ def main(
         _, eval_settings, _, eval_wrappers = configs.load_1p_settings(game_id=eval_id)
     else:
         _, eval_settings, _, eval_wrappers = configs.load_2p_settings(game_id=eval_id)
+
+    if deterministic:
+        eval_wrappers.wrappers.append([cw.NoOpWrapper, {
+            "action_space_type": "discrete" if eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+            "no_attack": 0,
+        }])
 
     eval_env, num_envs = make_sb3_env(
         game_id=eval_id,

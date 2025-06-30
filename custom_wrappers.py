@@ -116,6 +116,30 @@ class AddLastActions(gym.Wrapper):
         return obs, reward, terminated, truncated, info
 
 
+class NoOpWrapper(gym.ActionWrapper):
+    def __init__(
+        self,
+        env,
+        no_attack: int = 0,
+        action_space_type: str = "multi_discrete",
+    ):
+        super().__init__(env)
+        self.last_attack = None
+        self.no_attack = no_attack
+        assert action_space_type in ["discrete", "multi_discrete"]
+        self.action_space_type = action_space_type
+    
+    def action(self, action):
+        attack = action[1] if self.action_space_type == "multi_discrete" else action
+        if attack == self.last_attack:
+            attack = self.no_attack
+            if self.action_space_type == "multi_discrete":
+                action[1] = attack
+            else:
+                action = attack
+        self.last_attack = attack
+        return action
+
 class ActionWrapper1P(gym.Wrapper):
     def __init__(
         self,
@@ -179,8 +203,10 @@ class ActionWrapper2P(gym.Wrapper):
         assert len(self.no_op) == len(self.valid_actions)
         for no_op_act, valid_act in zip(self.no_op, self.valid_actions):
             assert no_op_act < valid_act
-        assert opp_type in ["no_op", "random"]
+        assert opp_type in ["no_op", "random", "jump"]
         self.opp_type = opp_type
+        self.act_counter = 20
+        self.last_move = np.random.choice([1,2,3])
     
     def step(self, action):
         p1_actions = action[:len(self.valid_actions)]
@@ -188,6 +214,13 @@ class ActionWrapper2P(gym.Wrapper):
             non_agent_action = self.no_op
         elif self.opp_type == "random":
             non_agent_action = [np.random.randint(0, x) for x in self.valid_actions]
+        elif self.opp_type == "jump":
+            #TODO: implement discrete version
+            self.act_counter = (self.act_counter - 1) if self.act_counter > 0 else 20
+            move = self.last_move if self.act_counter != 20 else np.random.choice([1,2,3])
+            self.last_move = move
+            attack = np.random.randint(1, 6) if self.act_counter == 0 else self.no_op[1]
+            non_agent_action = [move, attack]
         p2_actions = action[len(self.valid_actions):] if len(action) > len(self.valid_actions) else non_agent_action
         for idx in range(len(p1_actions)):
             p1_actions[idx] = p1_actions[idx] if p1_actions[idx] < self.valid_actions[idx] else self.no_op[idx]

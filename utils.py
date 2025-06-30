@@ -273,14 +273,12 @@ def eval_student_teacher_entropy(
     episode_counts = np.zeros(n_envs, dtype="int")
     episode_count_targets = np.array([(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int")
 
-    teacher_probability_scores = np.zeros((len(teachers), len(env.action_space)), dtype="int")
-    steps = 0
+    teacher_probability_scores = np.zeros((len(teachers), len(env.action_space), 1), dtype="int")
 
     observations = env.reset()
     s_states, t_states = None, None
     episode_starts = np.ones((env.num_envs,), dtype=bool)
     while (episode_counts < episode_count_targets).any():
-        steps += 1
         teacher_actions = []
         for teacher in teachers:
             t_acts, t_states = teacher.predict(
@@ -298,9 +296,11 @@ def eval_student_teacher_entropy(
             deterministic=deterministic,
         )
 
+        # TODO: Choose suitable distance measurement
         for idx, t_acts in enumerate(teacher_actions):
-            probability = np.where(t_acts == s_acts, 1, 0)
-            teacher_probability_scores[idx] += probability
+            probs = np.where(t_acts == s_acts, 1, 0)
+            for act_idx in range(len(t_acts)):
+                np.concat((teacher_probability_scores[idx][act_idx], probs[act_idx]))
         
         observations, rewards, dones, infos = env.step(s_acts)
         for i in range(n_envs):
@@ -308,16 +308,7 @@ def eval_student_teacher_entropy(
                 if dones[i]:
                     episode_counts[i] += 1
     
-    # TODO: Check this is working as intended
-    # teacher_prob_mean = np.array([prob_scores / steps for prob_scores in teacher_probability_scores])
-    # for i in range(len(teacher_probability_scores)):
-    #     sumup = 0
-    #     for j in range(len(teacher_probability_scores[i])):
-    #         sumup += (teacher_probability_scores[i][j] - teacher_prob_mean[i])**2
-    # teacher_prob_std = np.array([
-    #     np.sqrt(
-    #         (teacher_probability_scores[i] - teacher_prob_mean[i]**2) / len(teacher_probability_scores[i]) - 1
-    #     )
-    # for i in range(len(teacher_probability_scores))])
+    teacher_prob_mean = np.mean(teacher_probability_scores)
+    teacher_prob_std = np.std(teacher_probability_scores)
 
     return teacher_probability_scores, teacher_prob_mean, teacher_prob_std

@@ -65,10 +65,12 @@ wrappers_settings = {
     "dilation": 1,
     "add_last_action": False,
     "stack_actions": 1,
+    "repeat_action": 1,
     "scale": False,
     "exclude_image_scaling": True,
     "role_relative": False,
     "filter_keys": ["frame"],
+    "flatten": True,
     "wrappers": [],
 }
 
@@ -93,12 +95,13 @@ wrappers_2p = [
         "max_actions": [9,11],
         "opp_type": "no_op",
     }],
+    [cw.AttTrainWrapper, {}],
     [cw.PixelObsWrapper, {"stack_frames": wrappers_settings["stack_frames"]}],
 ]
 
 folders = {
-    "parent_dir": "test",
-    "model_name": "kill_me",
+    "parent_dir": "final",
+    "model_name": "anti_air_expert",
 }
 
 policy_kwargs = {}
@@ -111,7 +114,7 @@ assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 
 ppo_settings = {
     "policy": "CnnPolicy",
-    "model_checkpoint": "0",
+    "model_checkpoint": "500000",
     "time_steps": 500_000,
     "device": th.device("cuda" if th.cuda.is_available else "cpu"),
     "gamma": 0.99,
@@ -134,7 +137,7 @@ ppo_settings = {
 }
 
 callbacks_settings = {
-    "autosave_freq": 50_000,
+    "autosave_freq": 200_000,
     "n_eval_episodes": 100,
     "eval_freq": 100_000,
     "evaluate_during_training": False,

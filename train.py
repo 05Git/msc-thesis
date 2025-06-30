@@ -11,7 +11,7 @@ from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement,
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 from custom_callbacks import ArcadeMetricsTrainCallback, ArcadeMetricsEvalCallback
 
-# diambra run -s _ python train.py --train_id _ --num_players _ --episode_num _
+# diambra run -s _ python train.py --train_id _ --num_players _ --policy_path _ --episode_num _
 
 def main(
     train_id: str,
