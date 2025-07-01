@@ -6,7 +6,9 @@ import configs
 import tempfile
 import torch as th
 import json
+import custom_wrappers as cw
 
+from diambra.arena import SpaceTypes
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
 from diambra.arena.utils.diambra_data_loader import DiambraDataLoader
 from stable_baselines3 import PPO
@@ -92,6 +94,11 @@ def main(
         train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_1p_settings(game_id=train_id)
     else:
         train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_2p_settings(game_id=train_id)
+    if deterministic:
+        eval_wrappers.wrappers.append([cw.NoOpWrapper, {
+            "action_space_type": "discrete" if eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+            "no_attack": 0,
+        }])
 
     num_train_envs = settings_config["num_train_envs"] 
     num_eval_envs = settings_config["num_eval_envs"]

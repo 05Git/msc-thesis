@@ -10,7 +10,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.utils import set_random_seed
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env
-from utils import evaluate_policy_with_arcade_metrics
+from utils import evaluate_policy_with_arcade_metrics, eval_student_teacher_likelihood
 from diambra.arena import SpaceTypes
 
 # diambra run -s _ python evaluate.py --eval_id _ --num_players _ --dir_name _ --policy_path _ --deterministic
@@ -34,7 +34,6 @@ def main(
         _, eval_settings, _, eval_wrappers = configs.load_1p_settings(game_id=eval_id)
     else:
         _, eval_settings, _, eval_wrappers = configs.load_2p_settings(game_id=eval_id)
-
     if deterministic:
         eval_wrappers.wrappers.append([cw.NoOpWrapper, {
             "action_space_type": "discrete" if eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
@@ -71,6 +70,16 @@ def main(
         deterministic=deterministic,
         return_episode_rewards=True,
     )
+    
+    if configs.teacher_paths:
+        teacher_act_counts, teacher_act_means, teacher_act_stds = eval_student_teacher_likelihood(
+            student=agent,
+            num_teachers=len(configs.teacher_paths),
+            env=eval_env,
+            n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
+            deterministic=deterministic,
+        )
+
     eval_env.close()
 
     eval_results = {
@@ -87,6 +96,13 @@ def main(
         "mean_arcade_runs": np.mean(arcade_infos),
         "std_arcade_runs": np.std(arcade_infos),
     }
+
+    if configs.teacher_paths:
+        eval_results.update({
+            "teacher_likelihood_scores": teacher_act_counts,
+            "teacher_likelihood_means": teacher_act_means,
+            "teacher_likelihood_stds": teacher_act_stds,
+        })
 
     # Save evaluation results
     base_path = os.path.dirname(os.path.abspath(__file__))

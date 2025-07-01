@@ -68,7 +68,7 @@ def main(
         actions, _ = agent.predict(obs, deterministic=deterministic)
         # print(f"Actions: {actions}")
         obs, rew, done, info = env.step(actions)
-        # print(f"Observation: {obs}")
+        # print(f"Observation: {obs['teacher_actions']}")
         # print(f"Reward: {rew}")
         # print(f"Info: {info}")
         if done:

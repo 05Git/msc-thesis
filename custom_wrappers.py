@@ -6,13 +6,16 @@ from stable_baselines3 import PPO
 from typing import Optional, Union
 
 
-class TeacherInputWrapper(gym.ObservationWrapper):
+class TeacherInputWrapper(gym.Wrapper):
     def __init__(
         self,
         env: gym.Env,
         teachers: list[PPO],
+        timesteps: int,
         deterministic: bool = True,
         teacher_action_space: str = "multi_discrete",
+        use_teacher_actions: bool = False,
+        initial_epsilon: float = 1.,
     ):
         super().__init__(env)
         self.env = env
@@ -32,6 +35,29 @@ class TeacherInputWrapper(gym.ObservationWrapper):
                 dtype=np.uint8,
             )
         })
+        assert initial_epsilon >= 0 and initial_epsilon <= 1
+        self.use_teacher_actions = use_teacher_actions
+        self.teacher_actions = None
+        self.timesteps = timesteps
+        self.current_step = 0
+        self.progress = 1
+        self.initial_epsilon = initial_epsilon
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return self.observation(obs), info
+    
+    def step(self, action):
+        self.current_step += 1
+        self.progress -= self.current_step / self.timesteps
+        action = self.action(action) if self.use_teacher_actions else action
+        step_result = self.env.step(action)
+        if len(step_result) == 4:
+            obs, reward, terminated, info = step_result
+            truncated = False
+        else:
+            obs, reward, terminated, truncated, info = step_result
+        return self.observation(obs), reward, terminated, truncated, info
 
     def observation(self, observation):
         teacher_actions = []
@@ -39,7 +65,17 @@ class TeacherInputWrapper(gym.ObservationWrapper):
             action, _ = teacher.predict(observation, deterministic=self.deterministic)
             teacher_actions.append(action)
         teacher_actions = np.array(teacher_actions)
+        self.teacher_actions = teacher_actions
         return {"image": observation, "teacher_actions": teacher_actions}
+    
+    def action(self, action):
+        epsilon = self.progress * self.initial_epsilon
+        teacher_action_idx = np.random.choice(range(len(self.teacher_actions)))
+        p = np.random.rand()
+        if p > epsilon:
+            return action
+        else:
+            return self.teacher_actions[teacher_action_idx]
 
 
 class PixelObsWrapper(gym.Wrapper):

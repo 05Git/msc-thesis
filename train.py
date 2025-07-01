@@ -10,14 +10,16 @@ from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, CallbackList
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
 from custom_callbacks import ArcadeMetricsTrainCallback, ArcadeMetricsEvalCallback
+from diambra.arena import SpaceTypes
 
-# diambra run -s _ python train.py --train_id _ --num_players _ --policy_path _ --episode_num _
+# diambra run -s _ python train.py --train_id _ --num_players _ --policy_path _ --episode_num _ --eval_deterministic
 
 def main(
     train_id: str,
     num_players: int,
     policy_path: str,
     episode_num: int,
+    eval_deterministic: bool,
 ):
     assert train_id in configs.game_ids, f"Invalid game id ({train_id}), available ids: [{configs.game_ids}]"
 
@@ -31,7 +33,12 @@ def main(
         train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_1p_settings(game_id=train_id)
     else:
         train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_2p_settings(game_id=train_id)
-
+    if eval_deterministic:
+        eval_wrappers.wrappers.append([cw.NoOpWrapper, {
+            "action_space_type": "discrete" if eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+            "no_attack": 0,
+        }])
+    
     num_train_envs = settings_config["num_train_envs"] 
     num_eval_envs = settings_config["num_eval_envs"]
     train_env, eval_env = train_eval_split(
@@ -151,6 +158,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_players", type=int, required=False, help="Number of players in the env", default=1)
     parser.add_argument("--policy_path", type=str, required=False, help="Path to load pre-trained policy", default=None)
     parser.add_argument("--episode_num", type=int, required=False, help="Number of players in the env", default=0)
+    parser.add_argument("--eval_deterministic", action=argparse.BooleanOptionalAction, required=False, help="Evaluate deterministic or stochastic policy", default=True)
     opt = parser.parse_args()
 
     main(
@@ -158,4 +166,5 @@ if __name__ == "__main__":
         num_players=opt.num_players,
         policy_path=opt.policy_path,
         episode_num=opt.episode_num,
+        eval_deterministic=opt.eval_deterministic,
     )

@@ -75,9 +75,18 @@ wrappers_settings = {
 }
 
 teacher_paths = [
-    # "/home/oscar/github/msc-thesis/final/attack_expert_rand/model/seed_0/500000.zip",
-    # "/home/oscar/github/msc-thesis/final/def_expert_rand/model/seed_0/500000.zip",
+    # "final/attack_expert_rand/model/seed_0/500000.zip",
+    # "final/def_expert_rand/model/seed_0/500000.zip",
+    # "final/anti_air_expert/model/seed_0/500000.zip",
 ]
+
+def load_teachers():
+    teachers = []
+    for path in teacher_paths:
+        teacher = PPO.load(path=path, device=ppo_settings["device"])
+        teachers.append(teacher)
+    
+    return teachers
 
 wrappers_1p = [
     [cw.ActionWrapper1P, {
@@ -93,7 +102,7 @@ wrappers_2p = [
         "action_space": "discrete" if env_settings["2_player"]["shared"]["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
         "no_op": 0,
         "max_actions": [9,11],
-        "opp_type": "no_op",
+        "opp_type": "random",
     }],
     [cw.AttTrainWrapper, {}],
     [cw.PixelObsWrapper, {"stack_frames": wrappers_settings["stack_frames"]}],
@@ -101,7 +110,7 @@ wrappers_2p = [
 
 folders = {
     "parent_dir": "final",
-    "model_name": "anti_air_expert",
+    "model_name": "ryu_1p_batchsize_1024",
 }
 
 policy_kwargs = {}
@@ -114,8 +123,8 @@ assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 
 ppo_settings = {
     "policy": "CnnPolicy",
-    "model_checkpoint": "500000",
-    "time_steps": 500_000,
+    "model_checkpoint": "2000000",
+    "time_steps": 2_000_000,
     "device": th.device("cuda" if th.cuda.is_available else "cpu"),
     "gamma": 0.99,
     "train_lr": (2.5e-5, 2.5e-6),
@@ -193,14 +202,13 @@ def load_1p_settings(game_id: str):
     eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
     
     if teacher_paths:
-        teachers = []
-        for path in teacher_paths:
-            teacher = PPO.load(path=path, device=ppo_settings["device"])
-            teachers.append(teacher)
         teacher_wrapper = [cw.TeacherInputWrapper, {
-                "teachers": teachers,
-                "deterministic": True,
-                "teacher_action_space": "discrete" if general_settings["action_space"] == SpaceTypes.DISCRETE else "multi_discrete"
+            "teachers": load_teachers(),
+            "timesteps": ppo_settings["time_steps"],
+            "deterministic": True,
+            "teacher_action_space": "discrete" if general_settings["action_space"] == SpaceTypes.DISCRETE else "multi_discrete",
+            "use_teacher_actions": False,
+            "initial_epsilon": 1.,
         }]
         train_wrappers.wrappers.append(teacher_wrapper)
         eval_wrappers.wrappers.append(teacher_wrapper)
@@ -254,14 +262,13 @@ def load_2p_settings(game_id: str):
     eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
 
     if teacher_paths:
-        teachers = []
-        for path in teacher_paths:
-            teacher = PPO.load(path=path, device=ppo_settings["device"])
-            teachers.append(teacher)
         teacher_wrapper = [cw.TeacherInputWrapper, {
-                "teachers": teachers,
-                "deterministic": True,
-                "teacher_action_space": "discrete" if general_settings["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete"
+            "teachers": load_teachers(),
+            "timesteps": ppo_settings["time_steps"],
+            "deterministic": True,
+            "teacher_action_space": "discrete" if general_settings["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
+            "use_teacher_actions": False,
+            "initial_epsilon": 1.,
         }]
         train_wrappers.wrappers.append(teacher_wrapper)
         eval_wrappers.wrappers.append(teacher_wrapper)

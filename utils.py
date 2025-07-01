@@ -256,59 +256,51 @@ def evaluate_policy_with_arcade_metrics(
     return (mean_reward, std_reward), (mean_stages, std_stages), (mean_arcade_runs, std_arcade_runs)
 
 
-def eval_student_teacher_entropy(
+def eval_student_teacher_likelihood(
     student: PPO,
-    teachers: Union[PPO, list[PPO]],
     env: gym.Env,
+    num_teachers: int,
     n_eval_episodes: int = 10,
     deterministic: bool = True,
 ):
     if not isinstance(env, VecEnv):
         env = DummyVecEnv([lambda: env])
-
-    if not type(teachers) == list:
-        teachers = [teachers]
-
+    
     n_envs = env.num_envs
     episode_counts = np.zeros(n_envs, dtype="int")
     episode_count_targets = np.array([(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int")
 
-    teacher_probability_scores = np.zeros((len(teachers), len(env.action_space), 1), dtype="int")
+    teacher_act_counts = np.zeros((num_teachers, env.action_space.shape[0], 1))
+    total_act_counts = np.zeros((num_teachers, env.action_space.shape[0], 1))
 
     observations = env.reset()
     s_states, t_states = None, None
     episode_starts = np.ones((env.num_envs,), dtype=bool)
     while (episode_counts < episode_count_targets).any():
-        teacher_actions = []
-        for teacher in teachers:
-            t_acts, t_states = teacher.predict(
-                observations,
-                state=t_states,
-                episode_start=episode_starts,
-                deterministic=deterministic,
-            )
-            teacher_actions.append(t_acts)
-
         s_acts, s_states = student.predict(
             observations,
             state=s_states,
             episode_start=episode_starts,
             deterministic=deterministic,
         )
-
-        # TODO: Choose suitable distance measurement
-        for idx, t_acts in enumerate(teacher_actions):
-            probs = np.where(t_acts == s_acts, 1, 0)
-            for act_idx in range(len(t_acts)):
-                np.concat((teacher_probability_scores[idx][act_idx], probs[act_idx]))
+        t_acts = np.array([observations["teacher_actions"][i] for i in range(n_envs)])
         
         observations, rewards, dones, infos = env.step(s_acts)
         for i in range(n_envs):
             if episode_counts[i] < episode_count_targets[i]:
+                for t_idx in range(num_teachers):
+                    for a_idx in range(len(s_acts[i])):
+                        t_act = t_acts[i, t_idx, a_idx]
+                        s_act = s_acts[i, a_idx]
+                        if t_act == s_act:
+                            teacher_act_counts[t_idx, a_idx, 0] += 1
+                        total_act_counts[t_idx, a_idx, 0] += 1
+
                 if dones[i]:
                     episode_counts[i] += 1
     
-    teacher_prob_mean = np.mean(teacher_probability_scores)
-    teacher_prob_std = np.std(teacher_probability_scores)
+    # Bernoulli mean and std
+    teacher_act_means = teacher_act_counts / total_act_counts
+    teacher_act_stds = np.sqrt((teacher_act_means * (1 - teacher_act_means)) / total_act_counts)
 
-    return teacher_probability_scores, teacher_prob_mean, teacher_prob_std
+    return teacher_act_counts.tolist(), teacher_act_means.tolist(), teacher_act_stds.tolist()
