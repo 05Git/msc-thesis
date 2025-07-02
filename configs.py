@@ -41,12 +41,17 @@ env_settings = {
         },
         "sfiii3n": {
             "train": {
-                "characters": ("Ryu", "Alex"),
+                "characters": ("Ryu", None),
                 "difficulty": 1,
                 "super_art": (1, 1),
             },
             "eval": {
-                "characters": ("Ryu", "Alex"),
+                "characters": [
+                    ("Ryu", "Alex"),
+                    ("Ryu", "Gouki"),
+                    ("Ryu", "Hugo"),
+                    ("Ryu", "Ibuki"),
+                ],
                 "difficulty": 1,
                 "super_art": (1, 1),
             },
@@ -75,9 +80,9 @@ wrappers_settings = {
 }
 
 teacher_paths = [
-    "final/attack_expert_rand/model/seed_0/500000.zip",
-    "final/def_expert_rand/model/seed_0/500000.zip",
-    "final/anti_air_expert/model/seed_0/500000.zip",
+    # "experts/ryu_vs_alex/attack_expert_rand/model/seed_0/500000.zip",
+    # "experts/ryu_vs_alex/def_expert_rand/model/seed_0/500000.zip",
+    # "experts/ryu_vs_alex/anti_air_expert/model/seed_0/500000.zip",
 ]
 
 def load_teachers():
@@ -102,15 +107,15 @@ wrappers_2p = [
         "action_space": "discrete" if env_settings["2_player"]["shared"]["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
         "no_op": 0,
         "max_actions": [9,11],
-        "opp_type": "random",
+        "opp_type": "jump",
     }],
     [cw.AttTrainWrapper, {}],
     [cw.PixelObsWrapper, {"stack_frames": wrappers_settings["stack_frames"]}],
 ]
 
 folders = {
-    "parent_dir": "tests_2",
-    "model_name": "ryu_1p_diff_8",
+    "parent_dir": "experts/ryu_vs_rand",
+    "model_name": "aa_expert",
 }
 
 policy_kwargs = {}
@@ -122,9 +127,9 @@ batch_size = ((n_steps * env_settings["num_train_envs"]) // nminibatches) * batc
 assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 
 ppo_settings = {
-    "policy": "MultiInputPolicy",
-    "model_checkpoint": "2000000",
-    "time_steps": 2_000_000,
+    "policy": "CnnPolicy",
+    "model_checkpoint": "0",
+    "time_steps": 500_000,
     "device": th.device("cuda" if th.cuda.is_available else "cpu"),
     "gamma": 0.99,
     "train_lr": (2.5e-5, 2.5e-6),
@@ -148,7 +153,7 @@ ppo_settings = {
 callbacks_settings = {
     "autosave_freq": 200_000,
     "n_eval_episodes": 100,
-    "eval_freq": 100_000,
+    "eval_freq": 200_000,
     "evaluate_during_training": False,
     "stop_training_if_no_improvement": False,
 }

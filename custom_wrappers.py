@@ -49,7 +49,8 @@ class TeacherInputWrapper(gym.Wrapper):
     
     def step(self, action):
         self.current_step += 1
-        self.progress -= self.current_step / self.timesteps
+        if self.progress > 0:
+            self.progress -= self.current_step / self.timesteps
         action = self.action(action) if self.use_teacher_actions else action
         step_result = self.env.step(action)
         if len(step_result) == 4:
@@ -99,7 +100,14 @@ class PixelObsWrapper(gym.Wrapper):
     
 
 class AddLastActions(gym.Wrapper):
-    def __init__(self, env, action_space: str = "multi_discrete"):
+    def __init__(
+        self,
+        env,
+        action_space: str = "multi_discrete",
+        action_history_len: int = 1,
+        use_similarity_penalty: bool = False,
+        similarity_penalty_alpha: float = 1e-3,
+    ):
         super().__init__(env)
         self.env = env
         if action_space == "multi_discrete":
@@ -112,8 +120,8 @@ class AddLastActions(gym.Wrapper):
             self.observation_space = gym.spaces.Dict({
                 "image": env.observation_space,
                 "last_actions": gym.spaces.Box(
-                    low=np.zeros_like(action_space_shape),
-                    high=action_space_shape,
+                    low=np.array([np.zeros_like(action_space_shape, dtype=np.uint8)] * action_history_len),
+                    high=np.array(np.array([action_space_shape]) * action_history_len),
                     dtype=np.uint8,
                 )
             })
@@ -121,21 +129,20 @@ class AddLastActions(gym.Wrapper):
             self.observation_space = env.observation_space
             self.observation_space.update({
                 "last_actions": gym.spaces.Box(
-                    low=np.zeros_like(action_space_shape),
-                    high=action_space_shape,
+                    low=np.array([np.zeros_like(action_space_shape, dtype=np.uint8)] * action_history_len),
+                    high=np.array(np.array([action_space_shape]) * action_history_len),
                     dtype=np.uint8,
-            )})
+                )
+            })
         else:
             raise Exception("Base env observation space must be Box or Dict")
-        self.last_actions = np.zeros_like(action_space_shape)
+        self.last_actions = np.array([np.zeros_like(action_space_shape, dtype=np.uint8)] * action_history_len)
+        self.use_similarity_penalty = use_similarity_penalty
+        self.similarity_penalty_alpha = similarity_penalty_alpha
     
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        if type(obs) == dict:
-            obs.update({"last_actions": self.last_actions})
-        else:
-            obs = {"image": obs, "last_actions": self.last_actions}
-        return obs, info
+        return self.observation(obs), info
     
     def step(self, action):
         step_result = self.env.step(action)
@@ -144,12 +151,27 @@ class AddLastActions(gym.Wrapper):
             truncated = False
         else:
             obs, reward, terminated, truncated, info = step_result
-        self.last_actions = action
-        if type(obs) == dict:
-            obs.update({"last_actions": self.last_actions})
+        self.last_actions.append(action)
+        self.last_actions.pop(0)
+        if self.use_similarity_penalty:
+            reward = self.penalty(reward)
+        return self.observation(obs), reward, terminated, truncated, info
+    
+    def observation(self, observation):
+        if type(observation) == dict:
+            observation.update({"last_actions": self.last_actions})
         else:
-            obs = {"image": obs, "last_actions": self.last_actions}
-        return obs, reward, terminated, truncated, info
+            observation = {"image": observation, "last_actions": self.last_actions}
+        return observation
+    
+    def penalty(self, reward):
+        penalty = 0
+        actionsT = self.last_actions.T
+        for prev_actions in actionsT:
+            unique_actions = np.array(list(set(prev_actions)))
+            penalty -= (actionsT.shape[0] - unique_actions.shape[0]) * self.similarity_penalty_alpha
+        penalty /= actionsT.shape[0]
+        return reward - penalty
 
 
 class NoOpWrapper(gym.ActionWrapper):
