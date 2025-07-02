@@ -262,10 +262,14 @@ def main(
 
     # Save evaluation results
     base_path = os.path.dirname(os.path.abspath(__file__))
+    if policy_path:
+        policy_path_parts = policy_path.split(os.sep)
+        model_path = os.path.join(*policy_path_parts[:2])
+    else:
+        model_path = os.path.join(configs.folders["parent_dir"], configs.folders["model_name"])
     file_path = os.path.join(
         base_path,
-        configs.folders["parent_dir"],
-        configs.folders["model_name"],
+        model_path,
         "model",
         "imitation_learning_results.json"
     )

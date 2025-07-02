@@ -9,7 +9,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, CallbackList
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
-from custom_callbacks import ArcadeMetricsTrainCallback, ArcadeMetricsEvalCallback
+from custom_callbacks import ArcadeMetricsTrainCallback, ArcadeMetricsEvalCallback, StudentSimilarityCallback
 from diambra.arena import SpaceTypes
 
 # diambra run -s _ python train.py --train_id _ --num_players _ --policy_path _ --episode_num _ --eval_deterministic
@@ -131,6 +131,8 @@ def main(
     callback_list = CallbackList([auto_save_callback, arcade_metrics_callback])
     if callbacks_config["evaluate_during_training"]:
         callback_list.callbacks.append(eval_callback)
+    if configs.teacher_paths:
+        callback_list.callbacks.append(StudentSimilarityCallback(verbose=0))
 
     try:
         agent.learn(

@@ -19,13 +19,13 @@ env_settings = {
             "train": {
                 "game_id": "sfiii3n",
                 "characters": "Ryu",
-                "difficulty": 1,
+                "difficulty": 8,
                 "super_art": 1,
             },
             "eval": {
                 "game_id": "sfiii3n",
                 "characters": "Ryu",
-                "difficulty": 1,
+                "difficulty": 6,
                 "super_art": 1,
             },
         },
@@ -54,7 +54,7 @@ env_settings = {
     },
     "seed": 0,
     "num_train_envs": 8,
-    "num_eval_envs": 4,
+    "num_eval_envs": 1,
 }
 
 wrappers_settings = {
@@ -75,9 +75,9 @@ wrappers_settings = {
 }
 
 teacher_paths = [
-    # "final/attack_expert_rand/model/seed_0/500000.zip",
-    # "final/def_expert_rand/model/seed_0/500000.zip",
-    # "final/anti_air_expert/model/seed_0/500000.zip",
+    "final/attack_expert_rand/model/seed_0/500000.zip",
+    "final/def_expert_rand/model/seed_0/500000.zip",
+    "final/anti_air_expert/model/seed_0/500000.zip",
 ]
 
 def load_teachers():
@@ -109,8 +109,8 @@ wrappers_2p = [
 ]
 
 folders = {
-    "parent_dir": "final",
-    "model_name": "ryu_1p_batchsize_1024",
+    "parent_dir": "tests_2",
+    "model_name": "ryu_1p_diff_8",
 }
 
 policy_kwargs = {}
@@ -122,7 +122,7 @@ batch_size = ((n_steps * env_settings["num_train_envs"]) // nminibatches) * batc
 assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 
 ppo_settings = {
-    "policy": "CnnPolicy",
+    "policy": "MultiInputPolicy",
     "model_checkpoint": "2000000",
     "time_steps": 2_000_000,
     "device": th.device("cuda" if th.cuda.is_available else "cpu"),

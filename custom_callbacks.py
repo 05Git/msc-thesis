@@ -310,3 +310,37 @@ class ArcadeMetricsEvalCallback(EventCallback):
         """
         if self.callback:
             self.callback.update_locals(locals_)
+
+
+class StudentSimilarityCallback(BaseCallback):
+    def __init__(self, verbose: int = 0):
+        super(StudentSimilarityCallback, self).__init__(verbose)
+
+    def _on_step(self) -> bool:
+        obs = self.locals["new_obs"]
+        student_actions = np.array(self.locals["actions"])
+
+        if isinstance(obs, dict):
+            teacher_actions = np.array(obs["teacher_actions"])
+        else:
+            raise ValueError("Expected observation to be a dict with 'teacher_actions'")
+        
+        n_teachers = teacher_actions.shape[1]
+        action_dim = student_actions.shape[1]
+        for i in range(n_teachers):
+            teacher_i_actions = teacher_actions[:, i, :]
+            
+            exact_match = np.all(student_actions == teacher_i_actions, axis=-1)
+            exact_match_mean = np.mean(exact_match)
+            self.logger.record(f"similarity/teacher_{i}/exact_match", exact_match_mean)
+
+            for a_idx in range(action_dim):
+                action_match = (student_actions[:, a_idx] == teacher_i_actions[:, a_idx])
+                action_match_mean = np.mean(action_match)
+
+                self.logger.record(f"similarity/teacher_{i}/action_{a_idx}", action_match_mean)
+
+                if self.verbose > 0:
+                    print(f"Teacher {i}: Action {a_idx} Similarity = {action_match_mean:.3f}")
+
+        return True
