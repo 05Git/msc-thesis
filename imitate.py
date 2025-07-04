@@ -5,26 +5,124 @@ import cv2
 import configs
 import tempfile
 import torch as th
+import torch.nn as nn
 import json
 import custom_wrappers as cw
+import gymnasium.spaces as spaces
 
 from diambra.arena import SpaceTypes
-from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
 from diambra.arena.utils.diambra_data_loader import DiambraDataLoader
-from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecTransposeImage
-from utils import evaluate_policy_with_arcade_metrics, train_eval_split
+from utils import load_agent, evaluate_policy_with_arcade_metrics, train_eval_split
 
 from imitation.data.types import TrajectoryWithRew
 from imitation.algorithms import bc
 from imitation.algorithms.dagger import SimpleDAggerTrainer
 from imitation.algorithms.adversarial.gail import GAIL
-from imitation.rewards.reward_nets import BasicRewardNet, CnnRewardNet
+from imitation.rewards.reward_nets import RewardNet, BasicRewardNet, CnnRewardNet
 from imitation.util.networks import RunningNorm
 from imitation.data import rollout
 from imitation.util import logger as imit_logger
 
 # diambra run -s _ python imitation.py --dataset_path _ --train_id _ --agent_num _ --policy_path _ --deterministic --num_players _
+
+class MultiDiscreteCnnRewardNet(CnnRewardNet):
+    def __init__(
+        self,
+        observation_space: gym.Space,
+        action_space: gym.Space,
+        use_state: bool = True,
+        use_action: bool = True,
+        use_next_state: bool = False,
+        use_done: bool = False,
+        hwc_format: bool = True,
+        **kwargs,
+    ):
+        super().__init__(observation_space, action_space)
+        self.use_state = use_state
+        self.use_action = use_action
+        self.use_next_state = use_next_state
+        self.use_done = use_done
+        self.hwc_format = hwc_format
+
+        if not (self.use_state or self.use_next_state):
+            raise ValueError("CnnRewardNet must take current or next state as input.")
+
+        if not preprocessing.is_image_space(observation_space):
+            raise ValueError(
+                "CnnRewardNet requires observations to be images.",
+            )
+        assert isinstance(observation_space, spaces.Box)
+
+        if self.use_action and not isinstance(action_space, spaces.MultiDiscrete):
+            raise ValueError(
+                "MultiDiscreteCnnRewardNet can only use MultiDiscrete action spaces.",
+            )
+
+        input_size = 0
+        output_size = 1
+
+        if self.use_state:
+            input_size += self.get_num_channels_obs(observation_space)
+
+        if self.use_action:
+            assert isinstance(action_space, spaces.Discrete)
+            output_size = int(action_space.n)
+
+        if self.use_next_state:
+            input_size += self.get_num_channels_obs(observation_space)
+
+        if self.use_done:
+            output_size *= 2
+
+        full_build_cnn_kwargs: Dict[str, Any] = {
+            "hid_channels": (32, 32),
+            **kwargs,
+            # we do not want the values below to be overridden
+            "in_channels": input_size,
+            "out_size": output_size,
+            "squeeze_output": output_size == 1,
+        }
+
+        self.cnn = networks.build_cnn(**full_build_cnn_kwargs)
+
+    def forward(
+        self,
+        state: th.Tensor,
+        action: th.Tensor,
+        next_state: th.Tensor,
+        done: th.Tensor,
+    ) -> th.Tensor:
+        inputs = []
+        if self.use_state:
+            state_ = cnn_transpose(state) if self.hwc_format else state
+            inputs.append(state_)
+        if self.use_next_state:
+            next_state_ = cnn_transpose(next_state) if self.hwc_format else next_state
+            inputs.append(next_state_)
+
+        inputs_concat = th.cat(inputs, dim=1)
+        outputs = self.cnn(inputs_concat)
+        if self.use_action and not self.use_done:
+            # for discrete action spaces, action is passed to forward as a one-hot
+            # vector.
+            rewards = th.sum(outputs * action, dim=1)
+        elif self.use_action and self.use_done:
+            # here, we double the size of the one-hot vector, where the first entries
+            # are for done=False and the second are for done=True.
+            action_done_false = action * (1 - done[:, None])
+            action_done_true = action * done[:, None]
+            full_acts = th.cat((action_done_false, action_done_true), dim=1)
+            rewards = th.sum(outputs * full_acts, dim=1)
+        elif not self.use_action and self.use_done:
+            # here we turn done into a one-hot vector.
+            dones_binary = done.long()
+            dones_one_hot = nn.functional.one_hot(dones_binary, num_classes=2)
+            rewards = th.sum(outputs * dones_one_hot, dim=1)
+        else:
+            rewards = outputs
+        return rewards
+    
 
 def get_transitions(data_loader: DiambraDataLoader, agent_num: int | None):
     n_episodes = len(data_loader.episode_files) # Number of datasets
@@ -62,6 +160,7 @@ def get_transitions(data_loader: DiambraDataLoader, agent_num: int | None):
         print(f"Trajectory {i + 1} loaded")
     
     return rollout.flatten_trajectories_with_rew(trajectories)
+
 
 def main(
     dataset_path_input: str, 
@@ -118,57 +217,8 @@ def main(
     model_checkpoint = ppo_config["model_checkpoint"]
     save_path = os.path.join(configs.model_folder, f"seed_{settings_config['seed']}")
     checkpoint_path = os.path.join(save_path, model_checkpoint) if not policy_path else policy_path
-    # Load policy params if checkpoint exists, else make a new agent
-    if os.path.isfile(checkpoint_path + ".zip"):
-        # Finetune settings
-        print("\nCheckpoint found, loading policy")
-        agent = PPO.load(
-            path=checkpoint_path,
-            env=train_env,
-            gamma=ppo_config["gamma"],
-            learning_rate=linear_schedule(ppo_config["finetune_lr"][0], ppo_config["finetune_lr"][1]),
-            clip_range=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
-            clip_range_vf=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
-            policy_kwargs=configs.policy_kwargs,
-            tensorboard_log=configs.tensor_board_folder,
-            device=configs.ppo_settings["device"],
-            custom_objects={
-                "action_space" : train_env.action_space,
-                "observation_space" : train_env.observation_space,
-            }
-        )
-    else:
-        print("\nNo or invalid checkpoint given, creating new policy")
-        agent = PPO(
-            policy=ppo_config["policy"],
-            env=train_env,
-            verbose=1,
-            gamma=ppo_config["gamma"],
-            batch_size=ppo_config["batch_size"],
-            n_epochs=ppo_config["n_epochs"],
-            n_steps=ppo_config["n_steps"],
-            learning_rate=linear_schedule(ppo_config["train_lr"][0], ppo_config["train_lr"][1]),
-            clip_range=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
-            clip_range_vf=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
-            policy_kwargs=configs.policy_kwargs,
-            gae_lambda=ppo_config["gae_lambda"],
-            ent_coef=ppo_config["ent_coef"],
-            vf_coef=ppo_config["vf_coef"],
-            max_grad_norm=ppo_config["max_grad_norm"],
-            use_sde=ppo_config["use_sde"],
-            sde_sample_freq=ppo_config["sde_sample_freq"],
-            normalize_advantage=ppo_config["normalize_advantage"],
-            stats_window_size=ppo_config["stats_window_size"],
-            target_kl=ppo_config["target_kl"],
-            tensorboard_log=configs.tensor_board_folder,
-            device=configs.ppo_settings["device"],
-            seed=settings_config["seed"]
-        )
+    agent = load_agent(env=train_env, seed=settings_config["seed"], policy_path=checkpoint_path)
 
-    # Print policy network architecture
-    print("Policy architecture:")
-    print(agent.policy)
-        
     # Set new imitation logger
     imit_log = imit_logger.configure(configs.tensor_board_folder, ["stdout", "tensorboard"])
 

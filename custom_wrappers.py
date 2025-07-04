@@ -80,10 +80,10 @@ class TeacherInputWrapper(gym.Wrapper):
 
 
 class PixelObsWrapper(gym.Wrapper):
-    def __init__(self, env, stack_frames: int = 4):
+    def __init__(self, env, image_shape: tuple[int] = (84, 84), stack_frames: int = 4):
         super().__init__(env)
         self.env = env
-        self.observation_space = gym.spaces.Box(0, 255, (84, 84, stack_frames), np.uint8)
+        self.observation_space = gym.spaces.Box(0, 255, (image_shape[0], image_shape[1], stack_frames), np.uint8)
     
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
@@ -121,7 +121,7 @@ class AddLastActions(gym.Wrapper):
                 "image": env.observation_space,
                 "last_actions": gym.spaces.Box(
                     low=np.array([np.zeros_like(action_space_shape, dtype=np.uint8)] * action_history_len),
-                    high=np.array(np.array([action_space_shape]) * action_history_len),
+                    high=np.array(np.array([action_space_shape]* action_history_len, dtype=np.uint8)),
                     dtype=np.uint8,
                 )
             })
@@ -130,7 +130,7 @@ class AddLastActions(gym.Wrapper):
             self.observation_space.update({
                 "last_actions": gym.spaces.Box(
                     low=np.array([np.zeros_like(action_space_shape, dtype=np.uint8)] * action_history_len),
-                    high=np.array(np.array([action_space_shape]) * action_history_len),
+                    high=np.array(np.array([action_space_shape] * action_history_len, dtype=np.uint8)),
                     dtype=np.uint8,
                 )
             })
@@ -151,8 +151,8 @@ class AddLastActions(gym.Wrapper):
             truncated = False
         else:
             obs, reward, terminated, truncated, info = step_result
-        self.last_actions.append(action)
-        self.last_actions.pop(0)
+        self.last_actions = self.last_actions[1:]
+        self.last_actions = np.concatenate((self.last_actions, [action]))
         if self.use_similarity_penalty:
             reward = self.penalty(reward)
         return self.observation(obs), reward, terminated, truncated, info
@@ -264,7 +264,7 @@ class ActionWrapper2P(gym.Wrapper):
         assert opp_type in ["no_op", "random", "jump"]
         self.opp_type = opp_type
         self.act_counter = 20
-        self.last_move = np.random.choice([1,2,3])
+        self.last_move = np.random.choice([2,3,4])
     
     def step(self, action):
         p1_actions = action[:len(self.valid_actions)]

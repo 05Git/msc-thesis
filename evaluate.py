@@ -6,11 +6,10 @@ import torch as th
 import numpy as  np
 import custom_wrappers as cw
 
-from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.utils import set_random_seed
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env
-from utils import evaluate_policy_with_arcade_metrics, eval_student_teacher_likelihood
+from utils import load_agent, evaluate_policy_with_arcade_metrics, eval_student_teacher_likelihood
 from diambra.arena import SpaceTypes
 
 # diambra run -s _ python evaluate.py --eval_id _ --num_players _ --dir_name _ --policy_path _ --deterministic
@@ -52,16 +51,7 @@ def main(
     model_checkpoint = ppo_config["model_checkpoint"]
     save_path = os.path.join(configs.model_folder, f"seed_{settings_config['seed']}")
     checkpoint_path = os.path.join(save_path, model_checkpoint) if not policy_path else policy_path
-    agent = PPO.load(
-        path=checkpoint_path,
-        env=eval_env,
-        policy_kwargs=configs.policy_kwargs,
-        device=configs.ppo_settings["device"],
-        custom_objects={
-            "action_space" : eval_env.action_space,
-            "observation_space" : eval_env.observation_space,
-        }
-    )
+    agent = load_agent(env=eval_env, seed=settings_config["seed"], policy_path=checkpoint_path, force_load=True)
 
     reward_infos, episode_lengths, stages_infos, arcade_infos = evaluate_policy_with_arcade_metrics(
         model=agent,

@@ -3,13 +3,12 @@ import argparse
 import configs
 import torch as th
 import custom_wrappers as cw
+import custom_callbacks as cc
 
-from utils import train_eval_split
-from stable_baselines3 import PPO
+from utils import train_eval_split, load_agent
 from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, CallbackList
-from diambra.arena.stable_baselines3.sb3_utils import linear_schedule, AutoSave
-from custom_callbacks import ArcadeMetricsTrainCallback, ArcadeMetricsEvalCallback, StudentSimilarityCallback
+from diambra.arena.stable_baselines3.sb3_utils import AutoSave
 from diambra.arena import SpaceTypes
 
 # diambra run -s _ python train.py --train_id _ --num_players _ --policy_path _ --episode_num _ --eval_deterministic
@@ -54,57 +53,11 @@ def main(
     train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
     print(f"\nActivated {num_train_envs + num_eval_envs} environment(s)")
     
+    # Load a policy
     model_checkpoint = ppo_config["model_checkpoint"]
     save_path = os.path.join(configs.model_folder, f"seed_{settings_config['seed']}")
     checkpoint_path = os.path.join(save_path, model_checkpoint) if not policy_path else policy_path
-    # Load policy params if checkpoint exists, else make a new agent
-    if os.path.isfile(checkpoint_path + ".zip"):
-        print("\nCheckpoint found, loading policy")
-        agent = PPO.load(
-            path=checkpoint_path,
-            env=train_env,
-            gamma=ppo_config["gamma"],
-            learning_rate=linear_schedule(ppo_config["finetune_lr"][0], ppo_config["finetune_lr"][1]),
-            clip_range=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
-            clip_range_vf=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
-            policy_kwargs=configs.policy_kwargs,
-            tensorboard_log=configs.tensor_board_folder,
-            device=configs.ppo_settings["device"],
-            custom_objects={
-                "action_space" : train_env.action_space,
-                "observation_space" : train_env.observation_space,
-            }
-        )
-    else:
-        print("\nNo or invalid checkpoint given, creating new policy")
-        agent = PPO(
-            policy=ppo_config["policy"],
-            env=train_env,
-            verbose=1,
-            gamma=ppo_config["gamma"],
-            batch_size=ppo_config["batch_size"],
-            n_epochs=ppo_config["n_epochs"],
-            n_steps=ppo_config["n_steps"],
-            learning_rate=linear_schedule(ppo_config["train_lr"][0], ppo_config["train_lr"][1]),
-            clip_range=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
-            clip_range_vf=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
-            policy_kwargs=configs.policy_kwargs,
-            gae_lambda=ppo_config["gae_lambda"],
-            ent_coef=ppo_config["ent_coef"],
-            vf_coef=ppo_config["vf_coef"],
-            max_grad_norm=ppo_config["max_grad_norm"],
-            use_sde=ppo_config["use_sde"],
-            sde_sample_freq=ppo_config["sde_sample_freq"],
-            normalize_advantage=ppo_config["normalize_advantage"],
-            stats_window_size=ppo_config["stats_window_size"],
-            target_kl=ppo_config["target_kl"],
-            tensorboard_log=configs.tensor_board_folder,
-            device=configs.ppo_settings["device"],
-            seed=settings_config["seed"]
-        )
-    # Print policy network architecture
-    print("Policy architecture:")
-    print(agent.policy)
+    agent = load_agent(env=train_env, seed=settings_config["seed"], policy_path=checkpoint_path)
 
     # Create callback list: track average number of stages and arcade runs completed, evaluate and autosave at regular intervals
     callbacks_config = configs.callbacks_settings
@@ -114,9 +67,9 @@ def main(
         save_path=save_path,
         filename_prefix=model_checkpoint + "_"
     )
-    arcade_metrics_callback = ArcadeMetricsTrainCallback(verbose=0)
+    arcade_metrics_callback = cc.ArcadeMetricsTrainCallback(verbose=0)
     stop_training = StopTrainingOnNoModelImprovement(max_no_improvement_evals=3, min_evals=5, verbose=1)
-    eval_callback = ArcadeMetricsEvalCallback(
+    eval_callback = cc.ArcadeMetricsEvalCallback(
         eval_env=eval_env,
         n_eval_episodes=callbacks_config["n_eval_episodes"], # Ensure each env completes required num of eval episodes
         eval_freq=max(callbacks_config["eval_freq"] // num_train_envs, 1),
@@ -131,8 +84,10 @@ def main(
     callback_list = CallbackList([auto_save_callback, arcade_metrics_callback])
     if callbacks_config["evaluate_during_training"]:
         callback_list.callbacks.append(eval_callback)
-    if configs.teacher_paths:
-        callback_list.callbacks.append(StudentSimilarityCallback(verbose=0))
+    if configs.wrappers_options["use_teachers"]:
+        callback_list.callbacks.append(cc.StudentSimilarityCallback(verbose=0))
+    if callbacks_config["measure_action_similarity"]:
+        callback_list.callbacks.append(cc.UniqueActionsCallback(verbose=0))
 
     try:
         agent.learn(

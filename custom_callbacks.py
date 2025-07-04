@@ -344,3 +344,28 @@ class StudentSimilarityCallback(BaseCallback):
                     print(f"Teacher {i}: Action {a_idx} Similarity = {action_match_mean:.3f}")
 
         return True
+
+
+class UniqueActionsCallback(BaseCallback):
+    def __init__(self, verbose = 0):
+        super(UniqueActionsCallback, self).__init__(verbose)
+
+    def _on_step(self) -> bool:
+        obs = self.locals["new_obs"]
+        if isinstance(obs, dict):
+            last_actions = np.array(obs["last_actions"])
+        else:
+            raise ValueError("Expected observation to be a dict with 'last_actions'")
+        
+        num_unique_actions = np.zeros(last_actions.shape[2], dtype=np.float32)
+        for env_actions in last_actions:
+            for idx, action_list in enumerate(env_actions.T):
+                num_unique_actions[idx] += len(set(action_list))
+        num_unique_actions /= last_actions.shape[0]
+
+        for act_idx, unique_actions_i in enumerate(num_unique_actions):
+            self.logger.record(f"unique_actions/average_num_unique_actions_idx_{act_idx}", unique_actions_i)
+            if self.verbose > 0:
+                print(f"Avergae number of unique actions at idx {act_idx}: {unique_actions_i:.4f}")
+
+        return True

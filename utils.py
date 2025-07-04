@@ -4,9 +4,12 @@ import warnings
 import numpy as np
 import gymnasium as gym
 import diambra.arena
+import configs
 
 from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings
+from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
 from stable_baselines3 import PPO
+from RND import RNDPPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
@@ -14,6 +17,111 @@ from stable_baselines3.common import type_aliases
 from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, VecMonitor, is_vecenv_wrapped
 from typing import Any, Callable, Optional, Union
 from torch.nn import functional as thF
+
+
+def load_agent(env: gym.Env, seed: int, policy_path: str = None, force_load: bool = False):
+    ppo_config = configs.ppo_settings
+    # Load policy params if checkpoint exists, else make a new agent
+    if os.path.isfile(policy_path + ".zip"):
+        print("\nCheckpoint found, loading policy")
+        if ppo_config["use_rnd"]:
+            agent = RNDPPO.load(
+                path=policy_path,
+                env=env,
+                int_beta=ppo_config["rnd_int_beta"],
+                rnd_model_args=ppo_config["rnd_model_args"],
+                gamma=ppo_config["gamma"],
+                learning_rate=linear_schedule(ppo_config["finetune_lr"][0], ppo_config["finetune_lr"][1]),
+                clip_range=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
+                clip_range_vf=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
+                policy_kwargs=configs.policy_kwargs,
+                tensorboard_log=configs.tensor_board_folder,
+                device=ppo_config["device"],
+                custom_objects={
+                    "action_space" : env.action_space,
+                    "observation_space" : env.observation_space,
+                }
+            )
+        else:
+            agent = PPO.load(
+                path=policy_path,
+                env=env,
+                gamma=ppo_config["gamma"],
+                learning_rate=linear_schedule(ppo_config["finetune_lr"][0], ppo_config["finetune_lr"][1]),
+                clip_range=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
+                clip_range_vf=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
+                policy_kwargs=configs.policy_kwargs,
+                tensorboard_log=configs.tensor_board_folder,
+                device=ppo_config["device"],
+                custom_objects={
+                    "action_space" : env.action_space,
+                    "observation_space" : env.observation_space,
+                }
+            )
+    elif not force_load:
+        print("\nNo or invalid checkpoint given, creating new policy")
+        if ppo_config["use_rnd"]:
+            agent = RNDPPO(
+                policy=ppo_config["policy"],
+                env=env,
+                verbose=1,
+                int_beta=ppo_config["rnd_int_beta"],
+                rnd_model_args=ppo_config["rnd_model_args"],
+                gamma=ppo_config["gamma"],
+                batch_size=ppo_config["batch_size"],
+                n_epochs=ppo_config["n_epochs"],
+                n_steps=ppo_config["n_steps"],
+                learning_rate=linear_schedule(ppo_config["train_lr"][0], ppo_config["train_lr"][1]),
+                clip_range=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
+                clip_range_vf=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
+                policy_kwargs=configs.policy_kwargs,
+                gae_lambda=ppo_config["gae_lambda"],
+                ent_coef=ppo_config["ent_coef"],
+                vf_coef=ppo_config["vf_coef"],
+                max_grad_norm=ppo_config["max_grad_norm"],
+                use_sde=ppo_config["use_sde"],
+                sde_sample_freq=ppo_config["sde_sample_freq"],
+                normalize_advantage=ppo_config["normalize_advantage"],
+                stats_window_size=ppo_config["stats_window_size"],
+                target_kl=ppo_config["target_kl"],
+                tensorboard_log=configs.tensor_board_folder,
+                device=configs.ppo_settings["device"],
+                seed=seed
+            )
+        else:
+            agent = PPO(
+                policy=ppo_config["policy"],
+                env=env,
+                verbose=1,
+                gamma=ppo_config["gamma"],
+                batch_size=ppo_config["batch_size"],
+                n_epochs=ppo_config["n_epochs"],
+                n_steps=ppo_config["n_steps"],
+                learning_rate=linear_schedule(ppo_config["train_lr"][0], ppo_config["train_lr"][1]),
+                clip_range=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
+                clip_range_vf=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
+                policy_kwargs=configs.policy_kwargs,
+                gae_lambda=ppo_config["gae_lambda"],
+                ent_coef=ppo_config["ent_coef"],
+                vf_coef=ppo_config["vf_coef"],
+                max_grad_norm=ppo_config["max_grad_norm"],
+                use_sde=ppo_config["use_sde"],
+                sde_sample_freq=ppo_config["sde_sample_freq"],
+                normalize_advantage=ppo_config["normalize_advantage"],
+                stats_window_size=ppo_config["stats_window_size"],
+                target_kl=ppo_config["target_kl"],
+                tensorboard_log=configs.tensor_board_folder,
+                device=configs.ppo_settings["device"],
+                seed=seed
+            )
+    else:
+        raise Exception("Checkpoint not found, check whether path is accurate.")
+
+    # Print policy network architecture
+    print("Policy architecture:")
+    print(agent.policy)
+
+    return agent
 
 
 def train_eval_split(game_id: str, num_train_envs: int, num_eval_envs: int,
