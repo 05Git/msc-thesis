@@ -18,7 +18,6 @@ class TeacherInputWrapper(gym.Wrapper):
         initial_epsilon: float = 1.,
     ):
         super().__init__(env)
-        self.env = env
         self.teachers = teachers
         self.deterministic = deterministic
         if teacher_action_space == "multi_discrete":
@@ -79,24 +78,13 @@ class TeacherInputWrapper(gym.Wrapper):
             return self.teacher_actions[teacher_action_idx]
 
 
-class PixelObsWrapper(gym.Wrapper):
-    def __init__(self, env, image_shape: tuple[int] = (84, 84), stack_frames: int = 4):
+class PixelObsWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
         super().__init__(env)
-        self.env = env
-        self.observation_space = gym.spaces.Box(0, 255, (image_shape[0], image_shape[1], stack_frames), np.uint8)
+        self.observation_space = gym.spaces.Box(0, 255, env.observation_space["frame"].shape, np.uint8)
     
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        return obs["frame"], info
-    
-    def step(self, action):
-        step_result = self.env.step(action)
-        if len(step_result) == 4:
-            obs, reward, terminated, info = step_result
-            truncated = False
-        else:
-            obs, reward, terminated, truncated, info = step_result
-        return obs["frame"], reward, terminated, truncated, info
+    def observation(self, observation):
+        return observation["frame"]
     
 
 class AddLastActions(gym.Wrapper):
@@ -109,7 +97,6 @@ class AddLastActions(gym.Wrapper):
         similarity_penalty_alpha: float = 1e-3,
     ):
         super().__init__(env)
-        self.env = env
         if action_space == "multi_discrete":
             action_space_shape = env.action_space.nvec
         elif action_space == "discrete":
@@ -207,7 +194,6 @@ class ActionWrapper1P(gym.Wrapper):
         max_actions: Union[int, list[int]] = [9,11]
     ):
         super().__init__(env)
-        self.env = env
         if action_space == "multi_discrete":
             self.valid_actions = env.action_space.nvec
             self.action_space = gym.spaces.MultiDiscrete(max_actions)
@@ -245,7 +231,6 @@ class ActionWrapper2P(gym.Wrapper):
         opp_type: str = "no_op"
     ):
         super().__init__(env)
-        self.env = env
         assert env.action_space["agent_0"] == env.action_space["agent_1"]
         if action_space == "multi_discrete":
             self.valid_actions = env.action_space["agent_0"].nvec

@@ -139,7 +139,7 @@ class RNDPPO(PPO):
             if self.rnd_running_std == 0:
                 self.rnd_running_std += 1e-8
             int_rewards = (int_rewards - self.rnd_running_mean) / self.rnd_running_std
-            int_rewards_clamped = np.clip(int_rewards, -1.0, 1.0)
+            int_rewards_clamped = np.clip(int_rewards, -5.0, 5.0)
             rewards += self.int_beta * int_rewards_clamped
             predictor_loss = F.mse_loss(predicted_features, target_features)
             self.rnd_model.optimizer.zero_grad()
@@ -286,11 +286,14 @@ class RNDModel(nn.Module):
 
     def forward(self, next_obs):
         if self.rnd_type == "state-action":
-            conv_features = self.conv_layer(next_obs["image"].float())
-            vec_features = self.vector_layer(next_obs["actions"].float())
+            image = next_obs["image"].float()
+            actions = next_obs["actions"].float()
+            conv_features = self.conv_layer(image)
+            vec_features = self.vector_layer(actions)
             input_features = th.concat((conv_features, vec_features), dim=1)
         else:
-            input_features = self.conv_layer(next_obs.float())
+            image = next_obs.float()
+            input_features = self.conv_layer(image)
             
         target_feature = self.target(input_features)
         predict_feature = self.predictor(input_features)

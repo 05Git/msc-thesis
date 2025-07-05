@@ -45,17 +45,17 @@ env_settings = {
         },
         "sfiii3n": {
             "train": {
-                "characters": ("Ryu", None),
+                "characters": ("Ryu", "Alex"),
                 "difficulty": 1,
                 "super_art": (1, 1),
             },
             "eval": {
-                "characters": [
+                "characters": 
                     ("Ryu", "Alex"),
-                    ("Ryu", "Gouki"),
-                    ("Ryu", "Hugo"),
-                    ("Ryu", "Ibuki"),
-                ],
+                    # ("Ryu", "Gouki"),
+                    # ("Ryu", "Hugo"),
+                    # ("Ryu", "Ibuki"),
+                
                 "difficulty": 1,
                 "super_art": (1, 1),
             },
@@ -63,7 +63,7 @@ env_settings = {
     },
     "seed": 0,
     "num_train_envs": 8,
-    "num_eval_envs": 1,
+    "num_eval_envs": 4,
 }
 
 wrappers_settings = {
@@ -108,10 +108,7 @@ wrappers_1p = [
         "no_op": 0,
         "max_actions": [9,11],
     }],
-    [cw.PixelObsWrapper, {
-        "image_shape": frame_shape[1:],
-        "stack_frames": wrappers_settings["stack_frames"]
-    }],
+    [cw.PixelObsWrapper, {}],
 ]
 
 wrappers_2p = [
@@ -119,23 +116,20 @@ wrappers_2p = [
         "action_space": "discrete" if env_settings["2_player"]["shared"]["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
         "no_op": 0,
         "max_actions": [9,11],
-        "opp_type": "random",
+        "opp_type": "no_op",
     }],
-    [cw.DefTrainWrapper, {}],
-    [cw.PixelObsWrapper, {
-        "image_shape": frame_shape[1:],
-        "stack_frames": wrappers_settings["stack_frames"]
-    }],
+    # [cw.AttTrainWrapper, {}],
+    [cw.PixelObsWrapper, {}],
 ]
 
 folders = {
-    "parent_dir": "rnd/tests",
-    "model_name": "image_64_rnd_state",
+    "parent_dir": "imitation/tests",
+    "model_name": "500K_steps",
 }
 
 policy_kwargs = {
-    # "features_extractor_class": CustomCNN,
     # "net_arch": {"pi": [64, 64], "vf": [32, 32]},
+    # "features_extractor_class": CustomCNN,
     # "features_extractor_kwargs": {"features_dim": 1028},
 }
 
@@ -147,8 +141,8 @@ assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 
 ppo_settings = {
     "policy": "CnnPolicy",
-    "model_checkpoint": "2000000",
-    "time_steps": 2_000_000,
+    "model_checkpoint": "0",
+    "time_steps": 500_000,
     "device": th.device("cuda" if th.cuda.is_available else "cpu"),
     "gamma": 0.99,
     "train_lr": (2.5e-5, 2.5e-6),
@@ -167,14 +161,14 @@ ppo_settings = {
     "sde_sample_freq": -1,
     "normalize_advantage": True,
     "stats_window_size": 100,
-    "use_rnd": True,
+    "use_rnd": False,
     "rnd_int_beta": 1e-3,
     "rnd_model_args": {
         "image_shape": frame_shape,
         "action_size": 2 if action_space == SpaceTypes.MULTI_DISCRETE else 1,
-        "vec_fc_size": 32,
-        "feature_size": 512, # Best behaviour so far: 256 (84x84)
-        "rnd_type": "state",
+        "vec_fc_size": 256,
+        "feature_size": 256, # Best behaviour so far: 256 (84x84)
+        "rnd_type": "state-action",
         "optim_args": {
             "lr": 1e-4,
             "betas": (0.9, 0.999),
@@ -194,14 +188,12 @@ callbacks_settings = {
 }
 
 imitation_settings = {
+    "type": "adv",
     "bc": {
         "n_epochs": 100
     },
-    "dagger": {
-        "n_steps": 100_000
-    },
     "gail": {
-        "n_steps": 100_000
+        "n_steps": 500_000
     },
 }
 
