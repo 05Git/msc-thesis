@@ -19,7 +19,7 @@ from typing import Any, Callable, Optional, Union
 from torch.nn import functional as thF
 
 
-def load_agent(env: gym.Env, seed: int, policy_path: str = None, force_load: bool = False):
+def load_agent(env: gym.Env, seed: int, policy_path: str, force_load: bool = False):
     ppo_config = configs.ppo_settings
     # Load policy params if checkpoint exists, else make a new agent
     if os.path.isfile(policy_path + ".zip"):

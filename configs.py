@@ -7,6 +7,7 @@ from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, Wr
 from filter_keys import get_filter_keys
 from custom_networks import  CustomCNN
 
+
 action_space = SpaceTypes.MULTI_DISCRETE
 frame_shape = (4, 84, 84) # SB3 expects channel first
 env_settings = {
@@ -23,13 +24,13 @@ env_settings = {
             "train": {
                 "game_id": "sfiii3n",
                 "characters": "Ryu",
-                "difficulty": 4,
+                "difficulty": 6,
                 "super_art": 1,
             },
             "eval": {
                 "game_id": "sfiii3n",
                 "characters": "Ryu",
-                "difficulty": 8,
+                "difficulty": 6,
                 "super_art": 1,
             },
         },
@@ -45,18 +46,21 @@ env_settings = {
         },
         "sfiii3n": {
             "train": {
-                "characters": ("Ryu", "Alex"),
-                "difficulty": 1,
+                "characters": ("Ryu", None),
+                "difficulty": 6,
                 "super_art": (1, 1),
             },
             "eval": {
-                "characters": 
+                "characters": [
                     ("Ryu", "Alex"),
-                    # ("Ryu", "Gouki"),
-                    # ("Ryu", "Hugo"),
-                    # ("Ryu", "Ibuki"),
-                
-                "difficulty": 1,
+                    ("Ryu", "Gouki"),
+                    ("Ryu", "Hugo"),
+                    ("Ryu", "Ibuki"),
+                    ("Ryu", "Chun-Li"),
+                    ("Ryu", "Makoto"),
+                    ("Ryu", "Q"),
+                ],
+                "difficulty": 6,
                 "super_art": (1, 1),
             },
         },
@@ -68,7 +72,7 @@ env_settings = {
 
 wrappers_settings = {
     "normalize_reward": True,
-    "normalization_factor": 1.,
+    "normalization_factor": 0.5,
     "no_attack_buttons_combinations": False,
     "stack_frames": 4,
     "dilation": 1,
@@ -103,34 +107,38 @@ def load_teachers():
     return teachers
 
 wrappers_1p = [
-    [cw.ActionWrapper1P, {
-        "action_space": "discrete" if env_settings["1_player"]["shared"]["action_space"] == SpaceTypes.DISCRETE else "multi_discrete",
-        "no_op": 0,
-        "max_actions": [9,11],
-    }],
+    # [cw.ActionMaskWrapper, {
+    #     "action_space": "discrete" if env_settings["1_player"]["shared"]["action_space"] == SpaceTypes.DISCRETE else "multi_discrete",
+    #     "no_op": 0,
+    #     "num_players": 1,
+    #     "max_actions": [9,11],
+    # }],
     [cw.PixelObsWrapper, {}],
 ]
 
 wrappers_2p = [
-    [cw.ActionWrapper2P, {
-        "action_space": "discrete" if env_settings["2_player"]["shared"]["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
-        "no_op": 0,
-        "max_actions": [9,11],
-        "opp_type": "no_op",
+    [cw.OpponentController, {
+        "opp_type": "jump"
     }],
-    # [cw.AttTrainWrapper, {}],
+    # [cw.ActionMaskWrapper, {
+    #     "action_space": "discrete" if env_settings["2_player"]["shared"]["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
+    #     "no_op": 0,
+    #     "num_players": 2,
+    #     "max_actions": [9,11],
+    # }],
+    [cw.AttTrainWrapper, {}],
     [cw.PixelObsWrapper, {}],
 ]
 
 folders = {
-    "parent_dir": "imitation/tests",
-    "model_name": "500K_steps",
+    "parent_dir": "final_policies/base_agents",
+    "model_name": "ryu_vanilla",
 }
 
 policy_kwargs = {
     # "net_arch": {"pi": [64, 64], "vf": [32, 32]},
     # "features_extractor_class": CustomCNN,
-    # "features_extractor_kwargs": {"features_dim": 1028},
+    # "features_extractor_kwargs": {"features_dim": 1024},
 }
 
 n_steps = 128
@@ -142,7 +150,7 @@ assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 ppo_settings = {
     "policy": "CnnPolicy",
     "model_checkpoint": "0",
-    "time_steps": 500_000,
+    "time_steps": 2_000_000,
     "device": th.device("cuda" if th.cuda.is_available else "cpu"),
     "gamma": 0.99,
     "train_lr": (2.5e-5, 2.5e-6),
@@ -168,7 +176,7 @@ ppo_settings = {
         "action_size": 2 if action_space == SpaceTypes.MULTI_DISCRETE else 1,
         "vec_fc_size": 256,
         "feature_size": 256, # Best behaviour so far: 256 (84x84)
-        "rnd_type": "state-action",
+        "rnd_type": "state",
         "optim_args": {
             "lr": 1e-4,
             "betas": (0.9, 0.999),
@@ -179,9 +187,9 @@ ppo_settings = {
 }
 
 callbacks_settings = {
-    "autosave_freq": 50_000,
+    "autosave_freq": 500_000,
     "n_eval_episodes": 100,
-    "eval_freq": 200_000,
+    "eval_freq": 250_000,
     "evaluate_during_training": False,
     "stop_training_if_no_improvement": False,
     "measure_action_similarity": False,
@@ -193,7 +201,7 @@ imitation_settings = {
         "n_epochs": 100
     },
     "gail": {
-        "n_steps": 500_000
+        "n_steps": 1_000_000
     },
 }
 
@@ -205,7 +213,7 @@ def load_1p_settings(game_id: str):
 
     wrappers_settings["filter_keys"] = get_filter_keys(game_id, num_players=1)
     train_wrappers = wrappers_settings.copy()
-    train_wrappers["wrappers"] = wrappers_1p
+    train_wrappers["wrappers"] = wrappers_1p.copy()
     if type(train_settings["characters"]) == list:
         train_wrappers["wrappers"].append([cw.InterleavingWrapper, {
             "character_list": train_settings["characters"],
@@ -213,7 +221,7 @@ def load_1p_settings(game_id: str):
         }])
     
     eval_wrappers = wrappers_settings.copy()
-    eval_wrappers["wrappers"] = wrappers_1p
+    eval_wrappers["wrappers"] = wrappers_1p.copy()
     if type(eval_settings["characters"]) == list:
         eval_wrappers["wrappers"].append([cw.InterleavingWrapper, {
             "character_list": eval_settings["characters"],
@@ -226,8 +234,8 @@ def load_1p_settings(game_id: str):
     if type(eval_settings["characters"]) == list:
         eval_settings["characters"] = eval_settings["characters"][0]
 
-    train_settings.update(general_settings)
-    eval_settings.update(general_settings)
+    train_settings.update(general_settings.copy())
+    eval_settings.update(general_settings.copy())
     train_settings = load_settings_flat_dict(EnvironmentSettings, train_settings)
     eval_settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
     train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
@@ -265,7 +273,7 @@ def load_2p_settings(game_id: str):
 
     wrappers_settings["filter_keys"] = get_filter_keys(game_id, num_players=2)
     train_wrappers = wrappers_settings.copy()
-    train_wrappers["wrappers"] = wrappers_2p
+    train_wrappers["wrappers"] = wrappers_2p.copy()
     if type(train_settings["characters"]) == list:
         train_wrappers["wrappers"].append([cw.InterleavingWrapper, {
             "character_list": train_settings["characters"],
@@ -273,7 +281,7 @@ def load_2p_settings(game_id: str):
         }])
     
     eval_wrappers = wrappers_settings.copy()
-    eval_wrappers["wrappers"] = wrappers_2p
+    eval_wrappers["wrappers"] = wrappers_2p.copy()
     if type(eval_settings["characters"]) == list:
         eval_wrappers["wrappers"].append([cw.InterleavingWrapper, {
             "character_list": eval_settings["characters"],
@@ -286,8 +294,8 @@ def load_2p_settings(game_id: str):
     if type(eval_settings["characters"]) == list:
         eval_settings["characters"] = eval_settings["characters"][0]
 
-    train_settings.update(general_settings)
-    eval_settings.update(general_settings)
+    train_settings.update(general_settings.copy())
+    eval_settings.update(general_settings.copy())
     train_settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, train_settings)
     eval_settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, eval_settings)
     train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)

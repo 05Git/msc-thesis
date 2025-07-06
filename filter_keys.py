@@ -20,7 +20,7 @@ filter_keys_2p = {
         "P2_health",
         # "P1_side",
         # "P2_side",
-        # "timer",
+        "timer",
         "frame"
     ],
     "sfiii3n": [],

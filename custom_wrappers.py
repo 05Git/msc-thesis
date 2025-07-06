@@ -185,97 +185,87 @@ class NoOpWrapper(gym.ActionWrapper):
         self.last_attack = attack
         return action
 
-class ActionWrapper1P(gym.Wrapper):
+
+class ActionMaskWrapper(gym.ActionWrapper):
     def __init__(
         self,
         env,
+        max_actions: Union[int, list[int]],
+        num_players: int = 1,
         action_space: str = "multi_discrete",
         no_op: Union[int, list[int]] = 0,
-        max_actions: Union[int, list[int]] = [9,11]
     ):
         super().__init__(env)
+        assert num_players in [1,2]
+        self.num_players = num_players
+
+        assert action_space in ["discrete", "multi_discrete"]
+        self.max_actions = max_actions
+
+        if num_players == 2:
+            assert env.action_space["agent_0"] == env.action_space["agent_1"]
+            act_space = env.action_space["agent_0"]
+        else:
+            act_space = env.action_space
+        
         if action_space == "multi_discrete":
-            self.valid_actions = env.action_space.nvec
+            self.valid_actions = act_space.nvec
             self.action_space = gym.spaces.MultiDiscrete(max_actions)
         elif action_space == "discrete":
-            self.valid_actions = env.action_space.n
+            self.valid_actions = act_space.n
             self.action_space = gym.spaces.Discrete(max_actions)
-        else:
-            raise Exception(f"Invalid action_space input argument: '{action_space}'\nValid arguments: 'discrete', 'multi_discrete'")
         for max_act, valid_act in zip(max_actions, self.valid_actions):
             assert valid_act <= max_act
-        self.no_op = no_op if type(no_op) == list else [no_op for _ in range(len(self.valid_actions))]
-        assert len(self.no_op) == len(self.valid_actions)
+
+        self.action_space_shape = act_space.n if type(act_space) == gym.spaces.Discrete else act_space.shape[0]
+        self.no_op = no_op if type(no_op) == list else [no_op for _ in range(self.action_space_shape)]
+        assert len(self.no_op) == self.action_space_shape
         for no_op_act, valid_act in zip(self.no_op, self.valid_actions):
             assert no_op_act < valid_act
-    
-    def step(self, action):
-        for idx in range(len(action)):
+
+    def action(self, action):
+        
+        # if self.num_players == 1:
+        for idx in range(self.action_space_shape):
             action[idx] = action[idx] if action[idx] < self.valid_actions[idx] else self.no_op[idx]
-        step_result = self.env.step(action)
-        if len(step_result) == 4:
-            obs, reward, terminated, info = step_result
-            truncated = False
-        else:
-            obs, reward, terminated, truncated, info = step_result
-        return obs, reward, terminated, truncated, info
+        # else:
+        #     print(self.action_space_shape)
+        #     print(action)
+        #     for idx in range(self.action_space_shape):
+        #         action["agent_0"][idx] = action["agent_0"][idx] if action["agent_0"][idx] < self.valid_actions[idx] else self.no_op[idx]
+        #     for idx in range(self.action_space_shape, self.action_space_shape * 2):
+        #         action["agent_1"][idx] = action["agent_1"][idx] if action["agent_1"][idx] < self.valid_actions[idx] else self.no_op[idx]
+
+        return action
 
 
-class ActionWrapper2P(gym.Wrapper):
-    def __init__(
-        self,
-        env,
-        action_space: str = "multi_discrete",
-        no_op: Union[int, list[int]] = 0,
-        max_actions: Union[int, list[int]] = [9,11],
-        opp_type: str = "no_op"
-    ):
+class OpponentController(gym.ActionWrapper):
+    def __init__(self, env: gym.Env, opp_type: str):
         super().__init__(env)
         assert env.action_space["agent_0"] == env.action_space["agent_1"]
-        if action_space == "multi_discrete":
-            self.valid_actions = env.action_space["agent_0"].nvec
-            self.action_space = gym.spaces.MultiDiscrete(max_actions)
-        elif action_space == "discrete":
-            self.valid_actions = env.action_space["agent_0"].n
-            self.action_space = gym.spaces.Discrete(max_actions)
-        else:
-            raise Exception(f"Invalid action_space input argument: '{action_space}'\nValid arguments: 'discrete', 'multi_discrete'")
-        for max_act, valid_act in zip(max_actions, self.valid_actions):
-            assert valid_act <= max_act
-        self.no_op = no_op if type(no_op) == list else [no_op for _ in range(len(self.valid_actions))]
-        assert len(self.no_op) == len(self.valid_actions)
-        for no_op_act, valid_act in zip(self.no_op, self.valid_actions):
-            assert no_op_act < valid_act
-        assert opp_type in ["no_op", "random", "jump"]
+        assert opp_type in ["no_op", "rand", "jump"]
         self.opp_type = opp_type
         self.act_counter = 20
         self.last_move = np.random.choice([2,3,4])
+        self.action_space_shape = env.action_space["agent_0"].n if type(env.action_space["agent_0"]) == gym.spaces.Discrete else env.action_space["agent_0"].shape[0]
+        if not hasattr(env, "no_op"):
+            self.no_op = [0 for _ in range(self.action_space_shape)]
     
-    def step(self, action):
-        p1_actions = action[:len(self.valid_actions)]
+    def action(self, action):
         if self.opp_type == "no_op":
             non_agent_action = self.no_op
-        elif self.opp_type == "random":
-            non_agent_action = [np.random.randint(0, x) for x in self.valid_actions]
+        elif self.opp_type == "rand":
+            non_agent_action = self.env.action_space.sample()["agent_1"]
         elif self.opp_type == "jump":
             #TODO: implement discrete version
-            self.act_counter = (self.act_counter - 1) if self.act_counter > 0 else 20
-            move = self.last_move if self.act_counter != 20 else np.random.choice([1,2,3])
+            self.act_counter = self.act_counter - 1 if self.act_counter > 0 else 20
+            move = self.last_move if self.act_counter != 20 else np.random.choice([2,3,4])
             self.last_move = move
             attack = np.random.randint(1, 6) if self.act_counter == 0 else self.no_op[1]
             non_agent_action = [move, attack]
-        p2_actions = action[len(self.valid_actions):] if len(action) > len(self.valid_actions) else non_agent_action
-        for idx in range(len(p1_actions)):
-            p1_actions[idx] = p1_actions[idx] if p1_actions[idx] < self.valid_actions[idx] else self.no_op[idx]
-        for idx in range(len(p2_actions)):
-            p2_actions[idx] = p2_actions[idx] if p2_actions[idx] < self.valid_actions[idx] else self.no_op[idx]
-        step_result = self.env.step({"agent_0": p1_actions, "agent_1": p2_actions})
-        if len(step_result) == 4:
-            obs, reward, terminated, info = step_result
-            truncated = False
         else:
-            obs, reward, terminated, truncated, info = step_result
-        return obs, reward, terminated, truncated, info
+            non_agent_action = self.no_op
+        return {"agent_0": action, "agent_1": non_agent_action}
 
 
 class InterleavingWrapper(gym.Wrapper):
@@ -343,6 +333,9 @@ class AttTrainWrapper(gym.Wrapper):
         self.health_key = "P2_health"
         self.last_health_value = None
         self.roles = [Roles.P1, Roles.P2]
+        self.timer_key = "timer" if "timer" in env.observation_space.spaces.keys() else None
+        self.timer_max = env.observation_space["timer"].high if "timer" in env.observation_space.spaces.keys() else None
+        self.timer_min = env.observation_space["timer"].low if "timer" in env.observation_space.spaces.keys() else None
 
     def reset(self, **kwargs):
         episode_roles = tuple(np.random.permutation(self.roles))
@@ -369,4 +362,7 @@ class AttTrainWrapper(gym.Wrapper):
         new_health_value = obs[self.health_key][0]
         reward = self.last_health_value - new_health_value
         self.last_health_value = new_health_value
+        if self.timer_key is not None:
+            reward -= ((self.timer_max - obs[self.timer_key][0]) / (self.timer_max - self.timer_min)) * 1e-2
         return obs, reward, terminated, truncated, info
+    

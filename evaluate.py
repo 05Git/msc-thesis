@@ -60,17 +60,6 @@ def main(
         deterministic=deterministic,
         return_episode_rewards=True,
     )
-    
-    if configs.teacher_paths:
-        teacher_act_counts, teacher_act_means, teacher_act_stds = eval_student_teacher_likelihood(
-            student=agent,
-            num_teachers=len(configs.teacher_paths),
-            env=eval_env,
-            n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
-            deterministic=deterministic,
-        )
-
-    eval_env.close()
 
     eval_results = {
         "model": checkpoint_path,
@@ -86,13 +75,23 @@ def main(
         "mean_arcade_runs": np.mean(arcade_infos),
         "std_arcade_runs": np.std(arcade_infos),
     }
+    
+    if configs.wrappers_options["use_teachers"]:
+        teacher_act_counts, teacher_act_means, teacher_act_stds = eval_student_teacher_likelihood(
+            student=agent,
+            num_teachers=len(configs.teacher_paths),
+            env=eval_env,
+            n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
+            deterministic=deterministic,
+        )
 
-    if configs.teacher_paths:
         eval_results.update({
             "teacher_likelihood_scores": teacher_act_counts,
             "teacher_likelihood_means": teacher_act_means,
             "teacher_likelihood_stds": teacher_act_stds,
         })
+
+    eval_env.close()
 
     # Save evaluation results
     base_path = os.path.dirname(os.path.abspath(__file__))

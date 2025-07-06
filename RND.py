@@ -140,6 +140,7 @@ class RNDPPO(PPO):
                 self.rnd_running_std += 1e-8
             int_rewards = (int_rewards - self.rnd_running_mean) / self.rnd_running_std
             int_rewards_clamped = np.clip(int_rewards, -5.0, 5.0)
+            rewards = rewards.squeeze() # Needed for 2-player envs, otherwise it has shape (8,1) instead of (8,)
             rewards += self.int_beta * int_rewards_clamped
             predictor_loss = F.mse_loss(predicted_features, target_features)
             self.rnd_model.optimizer.zero_grad()
