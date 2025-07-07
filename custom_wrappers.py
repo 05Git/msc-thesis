@@ -79,7 +79,7 @@ class TeacherInputWrapper(gym.Wrapper):
 
 
 class PixelObsWrapper(gym.ObservationWrapper):
-    def __init__(self, env):
+    def __init__(self, env: gym.Env):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(0, 255, env.observation_space["frame"].shape, np.uint8)
     
@@ -90,7 +90,7 @@ class PixelObsWrapper(gym.ObservationWrapper):
 class AddLastActions(gym.Wrapper):
     def __init__(
         self,
-        env,
+        env: gym.Env,
         action_space: str = "multi_discrete",
         action_history_len: int = 1,
         use_similarity_penalty: bool = False,
@@ -164,7 +164,7 @@ class AddLastActions(gym.Wrapper):
 class NoOpWrapper(gym.ActionWrapper):
     def __init__(
         self,
-        env,
+        env: gym.Env,
         no_attack: int = 0,
         action_space_type: str = "multi_discrete",
     ):
@@ -189,7 +189,7 @@ class NoOpWrapper(gym.ActionWrapper):
 class ActionMaskWrapper(gym.ActionWrapper):
     def __init__(
         self,
-        env,
+        env: gym.Env,
         max_actions: Union[int, list[int]],
         num_players: int = 1,
         action_space: str = "multi_discrete",
@@ -201,40 +201,59 @@ class ActionMaskWrapper(gym.ActionWrapper):
 
         assert action_space in ["discrete", "multi_discrete"]
         self.max_actions = max_actions
+        self.action_space_shape = len(max_actions) if type(max_actions) == list else max_actions
+
+        self.no_op = no_op if type(no_op) == list else [no_op for _ in range(self.action_space_shape)]
+        assert len(self.no_op) == self.action_space_shape
 
         if num_players == 2:
             assert env.action_space["agent_0"] == env.action_space["agent_1"]
-            act_space = env.action_space["agent_0"]
-        else:
-            act_space = env.action_space
-        
-        if action_space == "multi_discrete":
-            self.valid_actions = act_space.nvec
-            self.action_space = gym.spaces.MultiDiscrete(max_actions)
-        elif action_space == "discrete":
-            self.valid_actions = act_space.n
-            self.action_space = gym.spaces.Discrete(max_actions)
-        for max_act, valid_act in zip(max_actions, self.valid_actions):
-            assert valid_act <= max_act
+            if action_space == "multi_discrete":
+                self.valid_actions = {
+                    "agent_0": env.action_space["agent_0"].nvec,
+                    "agent_1": env.action_space["agent_1"].nvec,
+                }
+                self.action_space = gym.spaces.Dict({
+                    "agent_0": gym.spaces.MultiDiscrete(max_actions),
+                    "agent_1": gym.spaces.MultiDiscrete(max_actions),
+                })
+            else:
+                self.valid_actions = {
+                    "agent_0": env.action_space["agent_0"].n,
+                    "agent_1": env.action_space["agent_1"].n,
+                }
+                self.action_space = gym.spaces.Dict({
+                    "agent_0": gym.spaces.Discrete(max_actions),
+                    "agent_1": gym.spaces.Discrete(max_actions),
+                })
 
-        self.action_space_shape = act_space.n if type(act_space) == gym.spaces.Discrete else act_space.shape[0]
-        self.no_op = no_op if type(no_op) == list else [no_op for _ in range(self.action_space_shape)]
-        assert len(self.no_op) == self.action_space_shape
-        for no_op_act, valid_act in zip(self.no_op, self.valid_actions):
-            assert no_op_act < valid_act
+            for max_act, valid_act in zip(max_actions, self.valid_actions["agent_0"]):
+                assert valid_act <= max_act
+
+            for no_op_act, valid_act in zip(self.no_op, self.valid_actions["agent_0"]):
+                assert no_op_act < valid_act
+        else:        
+            if action_space == "multi_discrete":
+                self.valid_actions = env.action_space.nvec
+                self.action_space = gym.spaces.MultiDiscrete(max_actions)
+            elif action_space == "discrete":
+                self.valid_actions = env.action_space.n
+                self.action_space = gym.spaces.Discrete(max_actions)
+
+            for max_act, valid_act in zip(max_actions, self.valid_actions):
+                assert valid_act <= max_act
+
+            for no_op_act, valid_act in zip(self.no_op, self.valid_actions):
+                assert no_op_act < valid_act
 
     def action(self, action):
-        
-        # if self.num_players == 1:
-        for idx in range(self.action_space_shape):
-            action[idx] = action[idx] if action[idx] < self.valid_actions[idx] else self.no_op[idx]
-        # else:
-        #     print(self.action_space_shape)
-        #     print(action)
-        #     for idx in range(self.action_space_shape):
-        #         action["agent_0"][idx] = action["agent_0"][idx] if action["agent_0"][idx] < self.valid_actions[idx] else self.no_op[idx]
-        #     for idx in range(self.action_space_shape, self.action_space_shape * 2):
-        #         action["agent_1"][idx] = action["agent_1"][idx] if action["agent_1"][idx] < self.valid_actions[idx] else self.no_op[idx]
+        if self.num_players == 1:
+            for idx in range(self.action_space_shape):
+                action[idx] = action[idx] if action[idx] < self.valid_actions[idx] else self.no_op[idx]
+        else:
+            for idx in range(self.action_space_shape):
+                action["agent_0"][idx] = action["agent_0"][idx] if action["agent_0"][idx] < self.valid_actions[idx] else self.no_op[idx]
+                action["agent_1"][idx] = action["agent_1"][idx] if action["agent_1"][idx] < self.valid_actions[idx] else self.no_op[idx]
 
         return action
 
@@ -247,29 +266,31 @@ class OpponentController(gym.ActionWrapper):
         self.opp_type = opp_type
         self.act_counter = 20
         self.last_move = np.random.choice([2,3,4])
-        self.action_space_shape = env.action_space["agent_0"].n if type(env.action_space["agent_0"]) == gym.spaces.Discrete else env.action_space["agent_0"].shape[0]
-        if not hasattr(env, "no_op"):
-            self.no_op = [0 for _ in range(self.action_space_shape)]
+        if type(env.action_space["agent_0"]) == gym.spaces.Discrete:
+            self.action_space_shape = env.action_space["agent_0"].n
+        else:
+            self.action_space_shape = env.action_space["agent_0"].shape[0]
     
     def action(self, action):
         if self.opp_type == "no_op":
-            non_agent_action = self.no_op
+            non_agent_action = [0 for _ in range(self.action_space_shape)]
         elif self.opp_type == "rand":
             non_agent_action = self.env.action_space.sample()["agent_1"]
         elif self.opp_type == "jump":
-            #TODO: implement discrete version
             self.act_counter = self.act_counter - 1 if self.act_counter > 0 else 20
             move = self.last_move if self.act_counter != 20 else np.random.choice([2,3,4])
             self.last_move = move
-            attack = np.random.randint(1, 6) if self.act_counter == 0 else self.no_op[1]
-            non_agent_action = [move, attack]
-        else:
-            non_agent_action = self.no_op
+            if type(self.env.action_space) == gym.spaces.MultiDiscrete:
+                attack = np.random.randint(1, self.env.action_space.nvec[1]) if self.act_counter == 0 else 0
+                non_agent_action = [move, attack]
+            elif type(self.env.action_space) == gym.spaces.Discrete:
+                non_agent_action = [np.random.randint(9, self.env.action_space.n) if self.act_counter == 0 else move]
+
         return {"agent_0": action, "agent_1": non_agent_action}
 
 
 class InterleavingWrapper(gym.Wrapper):
-    def __init__(self, env, character_list: list[str], one_p_env: bool):
+    def __init__(self, env: gym.Env, character_list: list[str], one_p_env: bool):
         super().__init__(env)
         self.character_list = character_list
         self.character_queue = list(np.random.permutation(self.character_list))
@@ -293,11 +314,14 @@ class InterleavingWrapper(gym.Wrapper):
         
 
 class DefTrainWrapper(gym.Wrapper):
-    def __init__(self, env):
+    def __init__(self, env: gym.Env):
         super().__init__(env)
         self.health_key = "P1_health"
         self.last_health_value = None
         self.roles = [Roles.P1, Roles.P2]
+        self.timer_key = "timer" if "timer" in env.observation_space.spaces.keys() else None
+        self.timer_max = env.observation_space["timer"].high if "timer" in env.observation_space.spaces.keys() else None
+        self.timer_min = env.observation_space["timer"].low if "timer" in env.observation_space.spaces.keys() else None
 
     def reset(self, **kwargs):
         episode_roles = tuple(np.random.permutation(self.roles))
@@ -324,11 +348,13 @@ class DefTrainWrapper(gym.Wrapper):
         new_health_value = obs[self.health_key][0]
         reward = new_health_value - self.last_health_value
         self.last_health_value = new_health_value
+        if self.timer_key is not None:
+            reward += ((self.timer_max - obs[self.timer_key][0]) / (self.timer_max - self.timer_min)) * 1e-2
         return obs, reward, terminated, truncated, info
 
 
 class AttTrainWrapper(gym.Wrapper):
-    def __init__(self, env):
+    def __init__(self, env: gym.Env):
         super().__init__(env)
         self.health_key = "P2_health"
         self.last_health_value = None

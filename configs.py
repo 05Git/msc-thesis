@@ -149,7 +149,7 @@ assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 
 ppo_settings = {
     "policy": "CnnPolicy",
-    "model_checkpoint": "0",
+    "model_checkpoint": "2000000",
     "time_steps": 2_000_000,
     "device": th.device("cuda" if th.cuda.is_available else "cpu"),
     "gamma": 0.99,
