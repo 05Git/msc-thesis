@@ -1,5 +1,8 @@
 """
-Code taken from https://github.com/jcwleo/random-network-distillation-pytorch
+RND.py: PPO policy adjusted to use random newtork distillation
+Random network distillation paper: ___
+stable_baselines3's PPO implementation used
+RND model based on code available at: https://github.com/jcwleo/random-network-distillation-pytorch
 """
 import numpy as np
 import torch as th
@@ -17,8 +20,9 @@ class RNDPPO(PPO):
         self,
         policy,
         env,
-        int_beta: float = 5e-2,
-        rnd_model_args = {            
+        ######## MODIFIED #############
+        int_beta: float = 1e-3,
+        rnd_model_args: dict = {            
             "image_shape": (4, 84, 84),
             "action_size": 2,
             "vec_fc_size": 128,
@@ -31,6 +35,7 @@ class RNDPPO(PPO):
                 "weight_decay": 0.,
             }
         },
+        ###############################
         learning_rate = 0.0003,
         n_steps = 2048,
         batch_size = 64,
@@ -84,10 +89,12 @@ class RNDPPO(PPO):
             device,
             _init_setup_model
         )
+        ####################### MODIFED ######################
         self.rnd_model = RNDModel(**rnd_model_args).to(device)
         self.int_beta = int_beta
         self.rnd_running_mean = 0
         self.rnd_running_std = 1
+        ######################################################
     
     def collect_rollouts(self, env, callback, rollout_buffer, n_rollout_steps) -> bool:
         assert self._last_obs is not None, "No previous observation was provided"
@@ -128,7 +135,7 @@ class RNDPPO(PPO):
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
 
-            ########################################################################
+            ########################################## MODIFED #################################################
             if self.rnd_model.rnd_type == "state-action":
                 obs_tensor = {"image": obs_tensor, "actions": th.tensor(clipped_actions, device=self.device)}
             predicted_features, target_features = self.rnd_model.forward(obs_tensor)
@@ -149,7 +156,7 @@ class RNDPPO(PPO):
             self.logger.record("RND/intrinsic_reward", np.mean(int_rewards_clamped))
             self.logger.record("RND/int_reward_unclamped", np.mean(int_rewards))
             self.logger.record("RND/rnd_model_loss", np.mean(predictor_loss.detach().cpu().numpy()))
-            ########################################################################
+            ####################################################################################################
 
             self.num_timesteps += env.num_envs
 

@@ -1,3 +1,6 @@
+"""
+imitate.py: Train a policy through behavioural cloning or adversarial imitation
+"""
 import os
 import argparse
 import numpy as np
@@ -18,112 +21,20 @@ from utils import load_agent, evaluate_policy_with_arcade_metrics, train_eval_sp
 from imitation.data.types import TrajectoryWithRew
 from imitation.algorithms import bc
 from imitation.algorithms.adversarial.gail import GAIL
-from imitation.rewards.reward_nets import RewardNet, BasicRewardNet, CnnRewardNet
-from imitation.util.networks import RunningNorm
+from imitation.rewards.reward_nets import CnnRewardNet
 from imitation.data import rollout
 from imitation.util import logger as imit_logger
 
-# diambra run -s _ python imitation.py --dataset_path _ --train_id _ --agent_num _ --policy_path _ --deterministic --num_players _
+# diambra run -s _ python imitation.py --dataset_path _ --train_id _ --agent_num _ --policy_path _ --deterministic --num_players _ 
 
-# class MultiDiscreteCnnRewardNet(CnnRewardNet):
-#     def __init__(
-#         self,
-#         observation_space: gym.Space,
-#         action_space: gym.Space,
-#         use_state: bool = True,
-#         use_action: bool = True,
-#         use_next_state: bool = False,
-#         use_done: bool = False,
-#         hwc_format: bool = True,
-#         **kwargs,
-#     ):
-#         super().__init__(observation_space, action_space)
-#         self.use_state = use_state
-#         self.use_action = use_action
-#         self.use_next_state = use_next_state
-#         self.use_done = use_done
-#         self.hwc_format = hwc_format
+def get_transitions(data_loader: DiambraDataLoader, agent_num: int = None):
+    """
+    Transform episode recordings into trajectories for imitation learning algorithms.
 
-#         if not (self.use_state or self.use_next_state):
-#             raise ValueError("CnnRewardNet must take current or next state as input.")
-
-#         if not preprocessing.is_image_space(observation_space):
-#             raise ValueError(
-#                 "CnnRewardNet requires observations to be images.",
-#             )
-#         assert isinstance(observation_space, spaces.Box)
-
-#         if self.use_action and not isinstance(action_space, spaces.MultiDiscrete):
-#             raise ValueError(
-#                 "MultiDiscreteCnnRewardNet can only use MultiDiscrete action spaces.",
-#             )
-
-#         input_size = 0
-#         output_size = 1
-
-#         if self.use_state:
-#             input_size += self.get_num_channels_obs(observation_space)
-
-#         if self.use_action:
-#             assert isinstance(action_space, spaces.Discrete)
-#             output_size = int(action_space.n)
-
-#         if self.use_next_state:
-#             input_size += self.get_num_channels_obs(observation_space)
-
-#         if self.use_done:
-#             output_size *= 2
-
-#         full_build_cnn_kwargs: Dict[str, Any] = {
-#             "hid_channels": (32, 32),
-#             **kwargs,
-#             # we do not want the values below to be overridden
-#             "in_channels": input_size,
-#             "out_size": output_size,
-#             "squeeze_output": output_size == 1,
-#         }
-
-#         self.cnn = networks.build_cnn(**full_build_cnn_kwargs)
-
-#     def forward(
-#         self,
-#         state: th.Tensor,
-#         action: th.Tensor,
-#         next_state: th.Tensor,
-#         done: th.Tensor,
-#     ) -> th.Tensor:
-#         inputs = []
-#         if self.use_state:
-#             state_ = cnn_transpose(state) if self.hwc_format else state
-#             inputs.append(state_)
-#         if self.use_next_state:
-#             next_state_ = cnn_transpose(next_state) if self.hwc_format else next_state
-#             inputs.append(next_state_)
-
-#         inputs_concat = th.cat(inputs, dim=1)
-#         outputs = self.cnn(inputs_concat)
-#         if self.use_action and not self.use_done:
-#             # for discrete action spaces, action is passed to forward as a one-hot
-#             # vector.
-#             rewards = th.sum(outputs * action, dim=1)
-#         elif self.use_action and self.use_done:
-#             # here, we double the size of the one-hot vector, where the first entries
-#             # are for done=False and the second are for done=True.
-#             action_done_false = action * (1 - done[:, None])
-#             action_done_true = action * done[:, None]
-#             full_acts = th.cat((action_done_false, action_done_true), dim=1)
-#             rewards = th.sum(outputs * full_acts, dim=1)
-#         elif not self.use_action and self.use_done:
-#             # here we turn done into a one-hot vector.
-#             dones_binary = done.long()
-#             dones_one_hot = nn.functional.one_hot(dones_binary, num_classes=2)
-#             rewards = th.sum(outputs * dones_one_hot, dim=1)
-#         else:
-#             rewards = outputs
-#         return rewards
-    
-
-def get_transitions(data_loader: DiambraDataLoader, agent_num: int | None):
+    :param data_loader: (DiambraDataLoader) Diambra's data loader class, for loading episode recordings.
+    :param agent_num: If episode recording data features two agents, need to specify the ID of the agent
+    you want to imitate.
+    """
     n_episodes = len(data_loader.episode_files) # Number of datasets
     trajectories = []
     for i in range(n_episodes):
@@ -193,6 +104,12 @@ def main(
     else:
         train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_2p_settings(game_id=train_id)
     if deterministic:
+        # Due to DIAMBRA's implementation, selecting the same action each frame corresponds to holding down tthe button for that action.
+        # This means that an attack the policy is trying to spam each frame won't come out after the first button press, as holding
+        # an attack button leads to nothing happening. To allow the policy to play the game as it intends, this wrapper helps set any attack
+        # which is the same as the previous frame's to 0, which stops the env interpreting that attack button as held down and allows the
+        # policy to send out another attack. This is particularly important for deterministic policies, as they often converge to relying
+        # on one or two attacks no matter the situation, and are particularly prone to this button hold "bug".
         eval_wrappers.wrappers.append([cw.NoOpWrapper, {
             "action_space_type": "discrete" if eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
             "no_attack": 0,
@@ -210,6 +127,7 @@ def main(
         eval_wrappers=eval_wrappers,
         seed=settings_config["seed"]
     )
+    # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
     train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
     print(f"\nActivated {num_train_envs + num_eval_envs} environment(s)")
 
@@ -236,10 +154,9 @@ def main(
     reward_net = CnnRewardNet(
         observation_space=train_env.observation_space,
         action_space=train_env.action_space,
-        # normalize_input_layer=RunningNorm,
         hwc_format=False,
         use_action=False,
-        use_next_state=True, # GAIfO (s -> s')
+        use_next_state=True,
     )
     gail_trainer = GAIL(
         demonstrations=transitions,
@@ -279,9 +196,7 @@ def main(
             trainer = gail_trainer
             trainer.train(configs.imitation_settings["gail"]["n_steps"], callback=None)
         else:
-            raise ValueError(f"""
-            Expected imitation type to be 'imitate' or 'adv', received {configs.imitation_settings['type']} instead.
-            """)
+            raise ValueError(f"Expected imitation type to be 'imitate' or 'adv', received {configs.imitation_settings['type']} instead.")
     except KeyboardInterrupt:
         print("Ending imitation learning early, saving model")
 
@@ -341,10 +256,10 @@ if __name__ == "__main__":
     opt = parser.parse_args()
 
     main(
-        dataset_path_input=opt.dataset_path,
-        train_id=opt.train_id,
-        agent_num=opt.agent_num,
-        policy_path=opt.policy_path,
-        deterministic=opt.deterministic,
-        num_players=opt.num_players,
+        dataset_path_input=opt.dataset_path,    # Path to episode recordings
+        train_id=opt.train_id,                  # ID of game to train on
+        agent_num=opt.agent_num,                # Agent number to retrieve actions from (if recordings are of 2p env)
+        policy_path=opt.policy_path,            # Path to specific policy 
+        deterministic=opt.deterministic,        # Whether to evaluate deterministic or stochastic policy
+        num_players=opt.num_players,            # 1 or 2 player env
     )

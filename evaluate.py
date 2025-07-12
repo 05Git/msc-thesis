@@ -97,7 +97,7 @@ def main(
     base_path = os.path.dirname(os.path.abspath(__file__))
     if policy_path:
         policy_path_parts = policy_path.split(os.sep)
-        model_path = os.path.join(*policy_path_parts[:2])
+        model_path = os.path.join(*policy_path_parts[:2]) # Assumes relative path instead of absolute path
     else:
         model_path = os.path.join(configs.folders["parent_dir"], configs.folders["model_name"])
     results_save_path = os.path.join(

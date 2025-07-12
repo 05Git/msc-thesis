@@ -1,3 +1,6 @@
+"""
+record.py: Record episode trajectories for imitation learning.
+"""
 import diambra.arena
 import configs
 import os
@@ -38,6 +41,7 @@ def main(
     # step_ratio > 1 will make gameplay too fast to play normally
     if use_controller:
         settings.step_ratio = 1
+        settings.difficulty = 3
 
     # Recording settings
     base_path = os.path.dirname(os.path.abspath(__file__))
@@ -98,8 +102,8 @@ def main(
                     actions = [np.append(p1_actions, p2_actions)]
                 else:
                     actions, _ = agent.predict(obs, deterministic=deterministic)
-            obs, rew, done, info = env.step(actions)
-            if done:
+            obs, rew, terminated, truncated, info = env.step(actions)
+            if terminated or truncated:
                 break
             if use_controller:
                 time.sleep(1e-2)
@@ -120,7 +124,7 @@ if __name__ == '__main__':
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Whether to follow a deterministic or stochastic policy", default=True)
     parser.add_argument("--rec_folder", type=str, required=False, help="Folder to save recordings in", default="episode_recording")
     parser.add_argument("--username", type=str, required=True, help="Username to save recordings to")
-    parser.add_argument("num_players", type=int, required=False, help="Number of players acting in the env", default=1)
+    parser.add_argument("--num_players", type=int, required=False, help="Number of players acting in the env", default=1)
     opt = parser.parse_args()
 
     main(

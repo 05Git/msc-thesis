@@ -1,3 +1,6 @@
+"""
+watch.py: Observe a given policy's behaviour
+"""
 import os
 import argparse
 import configs
@@ -66,7 +69,7 @@ def main(
         # print("Move Logits:", move_logits)
         # print("Act Logits:", act_logits)
         actions, _ = agent.predict(obs, deterministic=deterministic)
-        # print(f"Actions: {actions}")
+        print(f"Actions: {actions}")
         obs, rew, done, info = env.step(actions)
         # print(f"Observation: {obs}")
         # print(f"Reward: {rew}")

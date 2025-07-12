@@ -1,12 +1,39 @@
+"""
+custom_wrappers.py: Custom wrappers to use for training and evaluating policies.
+"""
 import gymnasium as gym
 import numpy as np
 
 from diambra.arena import Roles
 from stable_baselines3 import PPO
 from typing import Optional, Union
+from collections import OrderedDict
 
+
+class BCTrainerWrapper(gym.ActionWrapper):
+    """
+    Behavioural cloning policies don't work with dict action spaces, so need to trick it into thinking
+    a 2 player env's action space is a 1 player action space.
+    """
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self.action_space = env.action_space["agent_0"]
+    
+    def action(self, action):
+        return action
 
 class TeacherInputWrapper(gym.Wrapper):
+    """
+    Add teacher's suggested actions as observation data.
+
+    :param env: Environment for student to interact with.
+    :param teachers: List of teachers.
+    :param timesteps: (int) Number of timesteps to anneal epsilon over, if using teacher actions.
+    :param deterministic: (bool) Whether teachers should use a deterministic or stochastic policy.
+    :param teacher_action_space: (str) Whether the teachers use a discrete or multi-discrete action_space.
+    :param use_teacher_action: (bool) Whether to use the teacher's recommended actions or not.
+    :param initial_epsilon: (float) Initial teacher-action epsilon value.
+    """
     def __init__(
         self,
         env: gym.Env,
@@ -49,6 +76,7 @@ class TeacherInputWrapper(gym.Wrapper):
     def step(self, action):
         self.current_step += 1
         if self.progress > 0:
+            # Anneal epsilon if it's greater than 0
             self.progress -= self.current_step / self.timesteps
         action = self.action(action) if self.use_teacher_actions else action
         step_result = self.env.step(action)
@@ -60,6 +88,7 @@ class TeacherInputWrapper(gym.Wrapper):
         return self.observation(obs), reward, terminated, truncated, info
 
     def observation(self, observation):
+        # Add teachers' recommended actions to vector observations
         teacher_actions = []
         for teacher in self.teachers:
             action, _ = teacher.predict(observation, deterministic=self.deterministic)
@@ -69,8 +98,9 @@ class TeacherInputWrapper(gym.Wrapper):
         return {"image": observation, "teacher_actions": teacher_actions}
     
     def action(self, action):
+        # Replace the student's action with a random teacher's action with probability (epsilon)
         epsilon = self.progress * self.initial_epsilon
-        teacher_action_idx = np.random.choice(range(len(self.teacher_actions)))
+        teacher_action_idx = np.random.randint(0, len(self.teachers))
         p = np.random.rand()
         if p > epsilon:
             return action
@@ -79,6 +109,9 @@ class TeacherInputWrapper(gym.Wrapper):
 
 
 class PixelObsWrapper(gym.ObservationWrapper):
+    """
+    Filters out non-image observations from a Dict space.
+    """
     def __init__(self, env: gym.Env):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(0, 255, env.observation_space["frame"].shape, np.uint8)
@@ -88,6 +121,10 @@ class PixelObsWrapper(gym.ObservationWrapper):
     
 
 class AddLastActions(gym.Wrapper):
+    """
+    Adds the last N actions to the observation history.
+    Can also be used to penalise repetitive actions.
+    """
     def __init__(
         self,
         env: gym.Env,
@@ -153,15 +190,19 @@ class AddLastActions(gym.Wrapper):
     
     def penalty(self, reward):
         penalty = 0
-        actionsT = self.last_actions.T
+        actionsT = self.last_actions.T # Transpose last_actions vector to align action types with each other
         for prev_actions in actionsT:
             unique_actions = np.array(list(set(prev_actions)))
             penalty -= (actionsT.shape[0] - unique_actions.shape[0]) * self.similarity_penalty_alpha
-        penalty /= actionsT.shape[0]
+        penalty /= actionsT.shape[0] # Normalise penalty by number of performable actions
         return reward - penalty
 
 
 class NoOpWrapper(gym.ActionWrapper):
+    """
+    Replaces an action with 0 if it's the same as the previous frame's action.
+    Necessary for evaluating deterministic policies that have collapsed to spamming one move repeatedly.
+    """
     def __init__(
         self,
         env: gym.Env,
@@ -187,6 +228,11 @@ class NoOpWrapper(gym.ActionWrapper):
 
 
 class ActionMaskWrapper(gym.ActionWrapper):
+    """
+    Mask any invalid actions in a base action space with no-op.
+    Allows for transfer between games where one game has a larger action space.
+    Action space must be chosen before training.
+    """
     def __init__(
         self,
         env: gym.Env,
@@ -259,6 +305,9 @@ class ActionMaskWrapper(gym.ActionWrapper):
 
 
 class OpponentController(gym.ActionWrapper):
+    """
+    Controls an enemy agent in a 2 player env to perform specific behaviours.
+    """
     def __init__(self, env: gym.Env, opp_type: str):
         super().__init__(env)
         assert env.action_space["agent_0"] == env.action_space["agent_1"]
@@ -272,24 +321,28 @@ class OpponentController(gym.ActionWrapper):
             self.action_space_shape = env.action_space["agent_0"].shape[0]
     
     def action(self, action):
+        agent_action = action["agent_0"] if type(action) == OrderedDict else action
         if self.opp_type == "no_op":
             non_agent_action = [0 for _ in range(self.action_space_shape)]
         elif self.opp_type == "rand":
             non_agent_action = self.env.action_space.sample()["agent_1"]
         elif self.opp_type == "jump":
-            self.act_counter = self.act_counter - 1 if self.act_counter > 0 else 20
+            self.act_counter = (self.act_counter - 1) if self.act_counter > 0 else 20
             move = self.last_move if self.act_counter != 20 else np.random.choice([2,3,4])
             self.last_move = move
-            if type(self.env.action_space) == gym.spaces.MultiDiscrete:
-                attack = np.random.randint(1, self.env.action_space.nvec[1]) if self.act_counter == 0 else 0
+            if type(self.env.action_space["agent_1"]) == gym.spaces.MultiDiscrete:
+                attack = np.random.randint(1, self.env.action_space["agent_1"].nvec[1]) if self.act_counter == 0 else 0
                 non_agent_action = [move, attack]
-            elif type(self.env.action_space) == gym.spaces.Discrete:
-                non_agent_action = [np.random.randint(9, self.env.action_space.n) if self.act_counter == 0 else move]
+            elif type(self.env.action_space["agent_1"]) == gym.spaces.Discrete:
+                non_agent_action = [np.random.randint(9, self.env.action_space["agent_1"].n) if self.act_counter == 0 else move]
 
-        return {"agent_0": action, "agent_1": non_agent_action}
+        return {"agent_0": agent_action, "agent_1": non_agent_action}
 
 
 class InterleavingWrapper(gym.Wrapper):
+    """
+    Randomly chooses a character from a given list at the start of each new episode.
+    """
     def __init__(self, env: gym.Env, character_list: list[str], one_p_env: bool):
         super().__init__(env)
         self.character_list = character_list
@@ -314,6 +367,9 @@ class InterleavingWrapper(gym.Wrapper):
         
 
 class DefTrainWrapper(gym.Wrapper):
+    """
+    Reward shaping: Agent is encouraged to maintain its health as long as possible.
+    """
     def __init__(self, env: gym.Env):
         super().__init__(env)
         self.health_key = "P1_health"
@@ -354,6 +410,9 @@ class DefTrainWrapper(gym.Wrapper):
 
 
 class AttTrainWrapper(gym.Wrapper):
+    """
+    Reward shaping: agent is encouraged to reduce opponent's health as fast as possible.
+    """
     def __init__(self, env: gym.Env):
         super().__init__(env)
         self.health_key = "P2_health"

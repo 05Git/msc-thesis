@@ -2,4 +2,5 @@ torch
 diambra
 diambra-arena[stable-baselines3]
 imitation
+sb3_distill
 ipynb

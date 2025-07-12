@@ -1,3 +1,6 @@
+"""
+utils.py: Various useful functions for loading policies and evaluating them.
+"""
 import os
 import time
 import warnings
@@ -20,6 +23,15 @@ from torch.nn import functional as thF
 
 
 def load_agent(env: gym.Env, seed: int, policy_path: str, force_load: bool = False):
+    """
+    Load either a PPO or an RNDPPO agent.
+
+    :param env: Environment for the agent to interact with.
+    :param seed: RNG seed.
+    :param policy_path: Path to load the policy.
+    :param force_load: If False and the given checkpoint is invalid, a new policy will be created.
+    Otherwise, this will return an error.
+    """
     ppo_config = configs.ppo_settings
     # Load policy params if checkpoint exists, else make a new agent
     if os.path.isfile(policy_path + ".zip"):
@@ -124,20 +136,29 @@ def load_agent(env: gym.Env, seed: int, policy_path: str, force_load: bool = Fal
     return agent
 
 
-def train_eval_split(game_id: str, num_train_envs: int, num_eval_envs: int,
+def train_eval_split(game_id: str,
+                     ####################### MODIFIED #########################
+                     num_train_envs: int, num_eval_envs: int,
                      train_settings: EnvironmentSettings=EnvironmentSettings(),
                      train_wrappers: WrappersSettings=WrappersSettings(),
                      eval_settings: EnvironmentSettings=EnvironmentSettings(),
                      eval_wrappers: WrappersSettings=WrappersSettings(),
+                     ##########################################################
                      episode_recording_settings: RecordingSettings=RecordingSettings(),
                      render_mode: str="rgb_array", seed: int=None, start_index: int=0,
                      allow_early_resets: bool=True, start_method: str=None, no_vec: bool=False,
                      use_subprocess: bool=True, log_dir_base: str="/tmp/DIAMBRALog/"):
     """
-    Create a wrapped, monitored VecEnv.
+    Modified version of make_sb3_env to simplify making separate train and eval envs.
+    Original code available at: __
+
     :param game_id: (str) the game environment ID
-    :param env_settings: (EnvironmentSettings) parameters for DIAMBRA Arena environment
-    :param wrappers_settings: (WrappersSettings) parameters for environment wrapping function
+    :param num_train_envs: (int) Number of training environments
+    :param num_eval_envs: (int) Number of evaluation environments
+    :param train_env_settings: (EnvironmentSettings) parameters for train env
+    :param train_wrappers: (WrappersSettings) parameters train env
+    :param eval_env_settings: (EnvironmentSettings) parameters for eval env
+    :param eval_wrappers: (WrappersSettings) parameters eval env
     :param episode_recording_settings: (RecordingSettings) parameters for environment recording wrapping function
     :param start_index: (int) start rank index
     :param allow_early_resets: (bool) allows early reset of the environment
@@ -162,6 +183,7 @@ def train_eval_split(game_id: str, num_train_envs: int, num_eval_envs: int,
             return env
         return _init
     
+    ############################################################## MODIFIED #################################################################
     assert eval_settings.game_id == train_settings.game_id
     assert num_train_envs > 0 and num_eval_envs > 0
     
@@ -184,15 +206,11 @@ def train_eval_split(game_id: str, num_train_envs: int, num_eval_envs: int,
 
     if seed is not None:
         set_random_seed(seed)
+    #########################################################################################################################################
         
     return train_env, eval_env
 
 
-
-#####################################################################################################################
-# Extended version of evaluate_policy() which tracks custom metrics                                                 #
-# Original code from https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/evaluation.py #
-#####################################################################################################################
 def evaluate_policy_with_arcade_metrics(
     model: "type_aliases.PolicyPredictor",
     env: Union[gym.Env, VecEnv],
@@ -203,22 +221,10 @@ def evaluate_policy_with_arcade_metrics(
     reward_threshold: Optional[float] = None,
     return_episode_rewards: bool = False,
     warn: bool = True,
-) -> Union[tuple[float, float], tuple[list[float], list[int]]]:
+):
     """
-    Runs the policy for ``n_eval_episodes`` episodes and outputs the average return
-    per episode (sum of undiscounted rewards).
-    If a vector env is passed in, this divides the episodes to evaluate onto the
-    different elements of the vector env. This static division of work is done to
-    remove bias. See https://github.com/DLR-RM/stable-baselines3/issues/402 for more
-    details and discussion.
-
-    .. note::
-        If environment has not been wrapped with ``Monitor`` wrapper, reward and
-        episode lengths are counted as it appears with ``env.step`` calls. If
-        the environment contains wrappers that modify rewards or episode lengths
-        (e.g. reward scaling, early episode reset), these will affect the evaluation
-        results as well. You can avoid this by wrapping environment with ``Monitor``
-        wrapper before anything else.
+    Extended version of stable_baseline3's evaluate_poliy method to track sutom metrics
+    Original code available at: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/evaluation.py
 
     :param model: The RL agent you want to evaluate. This can be any object
         that implements a ``predict`` method, such as an RL algorithm (``BaseAlgorithm``)
@@ -237,10 +243,6 @@ def evaluate_policy_with_arcade_metrics(
         per episode will be returned instead of the mean.
     :param warn: If True (default), warns user about lack of a Monitor wrapper in the
         evaluation environment.
-    :return: Mean return per episode (sum of rewards), std of reward per episode.
-        Returns (list[float], list[int]) when ``return_episode_rewards`` is True, first
-        list containing per-episode return and second containing per-episode lengths
-        (in number of steps).
     """
     is_monitor_wrapped = False
     # Avoid circular import
@@ -273,12 +275,9 @@ def evaluate_policy_with_arcade_metrics(
     states = None
     episode_starts = np.ones((env.num_envs,), dtype=bool)
 
-    #############################################################################
-    # Custom Metrics:                                                           #
-    # stages_completed: Number of arcade stages completed in each env           #
-    # arcade_runs_completed: Number of full arcade runs completed across envs   #
-    stages_completed = []
-    arcade_runs_completed = []
+    ################################# MODIFIED ##################################
+    stages_completed = []       # Number of arcade stages completed in each env
+    arcade_runs_completed = []  # Number of full arcade runs completed across envs
     current_stages_completed = np.zeros(n_envs, dtype=np.float64)
     current_arcade_runs_completed = np.zeros(n_envs, dtype=np.float64)
     #############################################################################
@@ -304,8 +303,7 @@ def evaluate_policy_with_arcade_metrics(
                 if callback is not None:
                     callback(locals(), globals())
                 
-                ###################################################################
-                # Increment for each stage completed in an episode                #
+                ############################### MODIFIED ##########################
                 if info["stage_done"]:
                     current_stages_completed[i] += 1
                     # Increment evey time the final stage is successfully completed
@@ -332,7 +330,7 @@ def evaluate_policy_with_arcade_metrics(
                         episode_counts[i] += 1
                     current_rewards[i] = 0
                     current_lengths[i] = 0
-                    ##############################################################
+                    ######################## MODIFIED ############################
                     stages_completed.append(current_stages_completed[i])
                     arcade_runs_completed.append(current_arcade_runs_completed[i])
                     current_stages_completed[i] = 0
@@ -347,8 +345,8 @@ def evaluate_policy_with_arcade_metrics(
     mean_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)
 
-    ######################################################################
-    # Normalize by episode count targets before calculating mean and std #
+    ########################### MODIFIED #################################
+    # Normalize by episode count targets before calculating mean and std
     mean_stages = np.mean(stages_completed)
     std_stages = np.std(stages_completed)
     mean_arcade_runs = np.mean(arcade_runs_completed)
@@ -358,10 +356,11 @@ def evaluate_policy_with_arcade_metrics(
     if reward_threshold is not None:
         assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
     
-    # Return custom metrics alongside reward info
     if return_episode_rewards:
+    ######################################## MODIFIED ##############################################
         return episode_rewards, episode_lengths, stages_completed, arcade_runs_completed
     return (mean_reward, std_reward), (mean_stages, std_stages), (mean_arcade_runs, std_arcade_runs)
+    ################################################################################################
 
 
 def eval_student_teacher_likelihood(
@@ -371,6 +370,16 @@ def eval_student_teacher_likelihood(
     n_eval_episodes: int = 10,
     deterministic: bool = True,
 ):
+    """
+    Evaluate student-teacher similarity
+    Utilises code from stable_baselines3's evaluate_policy method, modified code is highlighted as such
+
+    :param student: Student policy.
+    :param env: Environment for student to interact with.
+    :param num_teachers: (int) Number of teachers
+    :param n_eval_episodes: (int) Number of episodes to evaluate for
+    :param deterministic: (bool) Whether to evaluate the deterministic or stochastic policy 
+    """
     if not isinstance(env, VecEnv):
         env = DummyVecEnv([lambda: env])
     
@@ -378,11 +387,12 @@ def eval_student_teacher_likelihood(
     episode_counts = np.zeros(n_envs, dtype="int")
     episode_count_targets = np.array([(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int")
 
+    ########################################### MODIFIED #######################################
     teacher_act_counts = np.zeros((num_teachers, env.action_space.shape[0], 1))
     total_act_counts = np.zeros((num_teachers, env.action_space.shape[0], 1))
-
-    observations = env.reset()
+    
     s_states, t_states = None, None
+    observations = env.reset()
     episode_starts = np.ones((env.num_envs,), dtype=bool)
     while (episode_counts < episode_count_targets).any():
         s_acts, s_states = student.predict(
@@ -412,3 +422,4 @@ def eval_student_teacher_likelihood(
     teacher_act_stds = np.sqrt((teacher_act_means * (1 - teacher_act_means)) / total_act_counts)
 
     return teacher_act_counts.tolist(), teacher_act_means.tolist(), teacher_act_stds.tolist()
+    ############################################################################################

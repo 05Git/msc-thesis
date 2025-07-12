@@ -1,3 +1,6 @@
+"""
+train.py: Train a policy to play a given fighitng game.
+"""
 import os
 import argparse
 import configs
@@ -33,6 +36,12 @@ def main(
     else:
         train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_2p_settings(game_id=train_id)
     if eval_deterministic:
+        # Due to DIAMBRA's implementation, selecting the same action each frame corresponds to holding down tthe button for that action.
+        # This means that an attack the policy is trying to spam each frame won't come out after the first button press, as holding
+        # an attack button leads to nothing happening. To allow the policy to play the game as it intends, this wrapper helps set any attack
+        # which is the same as the previous frame's to 0, which stops the env interpreting that attack button as held down and allows the
+        # policy to send out another attack. This is particularly important for deterministic policies, as they often converge to relying
+        # on one or two attacks no matter the situation, and are particularly prone to this button hold "bug".
         eval_wrappers.wrappers.append([cw.NoOpWrapper, {
             "action_space_type": "discrete" if eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
             "no_attack": 0,
@@ -50,6 +59,7 @@ def main(
         eval_wrappers=eval_wrappers,
         seed=settings_config["seed"]
     )
+    # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
     train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
     print(f"\nActivated {num_train_envs + num_eval_envs} environment(s)")
     
@@ -71,7 +81,7 @@ def main(
     stop_training = StopTrainingOnNoModelImprovement(max_no_improvement_evals=3, min_evals=5, verbose=1)
     eval_callback = cc.ArcadeMetricsEvalCallback(
         eval_env=eval_env,
-        n_eval_episodes=callbacks_config["n_eval_episodes"], # Ensure each env completes required num of eval episodes
+        n_eval_episodes=callbacks_config["n_eval_episodes"],
         eval_freq=max(callbacks_config["eval_freq"] // num_train_envs, 1),
         log_path=save_path,
         best_model_save_path=save_path,
@@ -119,9 +129,9 @@ if __name__ == "__main__":
     opt = parser.parse_args()
 
     main(
-        train_id=opt.train_id,
-        num_players=opt.num_players,
-        policy_path=opt.policy_path,
-        episode_num=opt.episode_num,
-        eval_deterministic=opt.eval_deterministic,
+        train_id=opt.train_id,                      # ID of game to train on
+        num_players=opt.num_players,                # 1 or 2 player env
+        policy_path=opt.policy_path,                # Path to a specific policy to use
+        episode_num=opt.episode_num,                # Useful for not overriding previous evaluation data if doing finetuning
+        eval_deterministic=opt.eval_deterministic,  # Whether to use the deterministi or stochastic policy during evaluation
     )
