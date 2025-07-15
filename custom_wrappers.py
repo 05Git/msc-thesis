@@ -5,14 +5,42 @@ import gymnasium as gym
 import numpy as np
 
 from diambra.arena import Roles
-from stable_baselines3 import PPO
+from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Optional, Union
 from collections import OrderedDict
 
 
-class BCTrainerWrapper(gym.ActionWrapper):
+class ForceJumpWrapper(gym.ActionWrapper):
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self.jump_timer = 6
+    
+    def action(self, action):
+        self.jump_timer = (self.jump_timer - 1) if self.jump_timer > 0 else 50
+        if self.jump_timer < 6:
+            if side == "left":
+                new_move = 4
+            else:
+                new_move = 2
+        else:
+            new_move = ...
+
+        if type(action) == OrderedDict:
+            asp = self.env.action_space["agent_0"]
+        else:
+            asp = self.env.action_space
+
+        if type(asp) == gym.spaces.MultiDiscrete:
+            new_action = [new_move, ...]
+        else:
+            new_action = new_move
+
+        return ...
+    
+
+class TwoPTrainWrapper(gym.ActionWrapper):
     """
-    Behavioural cloning policies don't work with dict action spaces, so need to trick it into thinking
+    SB3 policies don't work with dict action spaces, so need to trick it into thinking
     a 2 player env's action space is a 1 player action space.
     """
     def __init__(self, env: gym.Env):
@@ -22,12 +50,13 @@ class BCTrainerWrapper(gym.ActionWrapper):
     def action(self, action):
         return action
 
+
 class TeacherInputWrapper(gym.Wrapper):
     """
     Add teacher's suggested actions as observation data.
 
     :param env: Environment for student to interact with.
-    :param teachers: List of teachers.
+    :param teachers: (dict) Dictionary of teachers organised by ID.
     :param timesteps: (int) Number of timesteps to anneal epsilon over, if using teacher actions.
     :param deterministic: (bool) Whether teachers should use a deterministic or stochastic policy.
     :param teacher_action_space: (str) Whether the teachers use a discrete or multi-discrete action_space.
@@ -37,8 +66,8 @@ class TeacherInputWrapper(gym.Wrapper):
     def __init__(
         self,
         env: gym.Env,
-        teachers: list[PPO],
-        timesteps: int,
+        teachers: dict[str: OnPolicyAlgorithm],
+        timesteps: int = 100_000,
         deterministic: bool = True,
         teacher_action_space: str = "multi_discrete",
         use_teacher_actions: bool = False,
@@ -50,17 +79,30 @@ class TeacherInputWrapper(gym.Wrapper):
         if teacher_action_space == "multi_discrete":
             action_space_shape = env.action_space.nvec
         elif teacher_action_space == "discrete":
-            action_space_shape = env.action_space.n
+            action_space_shape = [env.action_space.n]
         else:
             raise Exception(f"Invalid action_space input argument: '{teacher_action_space}'\nValid arguments: 'discrete', 'multi_discrete'")
-        self.observation_space = gym.spaces.Dict({
-            "image": env.observation_space,
-            "teacher_actions": gym.spaces.Box(
-                low=np.array([np.zeros_like(action_space_shape)] * len(teachers)).reshape(len(teachers), len(action_space_shape)),
-                high=np.array([action_space_shape] * len(teachers)).reshape(len(teachers), len(action_space_shape)),
-                dtype=np.uint8,
-            )
-        })
+        if isinstance(env.observation_space, gym.spaces.Box):
+            self.observation_space = gym.spaces.Dict({
+                "image": env.observation_space,
+                **{id: gym.spaces.Box(
+                        low=np.zeros_like(action_space_shape),
+                        high=np.array(action_space_shape),
+                        dtype=np.uint8
+                    ) for id in teachers.keys()
+                }
+            })
+        elif isinstance(env.observation_space, gym.spaces.Dict):
+            self.observation_space = env.observation_space
+            for id in teachers.keys():
+                self.observation_space[id] = gym.spaces.Box(
+                    low=np.zeros_like(action_space_shape),
+                    high=np.array(action_space_shape),
+                    dtype=np.uint8
+                )
+        else:
+            raise Exception("Base env observation space must be Box or Dict")
+        
         assert initial_epsilon >= 0 and initial_epsilon <= 1
         self.use_teacher_actions = use_teacher_actions
         self.teacher_actions = None
@@ -89,23 +131,27 @@ class TeacherInputWrapper(gym.Wrapper):
 
     def observation(self, observation):
         # Add teachers' recommended actions to vector observations
-        teacher_actions = []
-        for teacher in self.teachers:
-            action, _ = teacher.predict(observation, deterministic=self.deterministic)
-            teacher_actions.append(action)
-        teacher_actions = np.array(teacher_actions)
+        teacher_actions = {}
+        teacher_observation = observation["image"] if isinstance(observation, dict) else observation
+        for id, teacher in self.teachers.items():
+            action, _ = teacher.predict(teacher_observation, deterministic=self.deterministic)
+            teacher_actions[id] = action
         self.teacher_actions = teacher_actions
-        return {"image": observation, "teacher_actions": teacher_actions}
+        if type(observation) == dict:
+            observation.update(teacher_actions)
+        else:
+            observation = {"image": observation, **teacher_actions}
+        return observation
     
     def action(self, action):
         # Replace the student's action with a random teacher's action with probability (epsilon)
         epsilon = self.progress * self.initial_epsilon
-        teacher_action_idx = np.random.randint(0, len(self.teachers))
+        teacher_id = np.random.choice(list(self.teachers.keys()))
         p = np.random.rand()
         if p > epsilon:
             return action
         else:
-            return self.teacher_actions[teacher_action_idx]
+            return self.teacher_actions[teacher_id]
 
 
 class PixelObsWrapper(gym.ObservationWrapper):
@@ -137,27 +183,25 @@ class AddLastActions(gym.Wrapper):
         if action_space == "multi_discrete":
             action_space_shape = env.action_space.nvec
         elif action_space == "discrete":
-            action_space_shape = env.action_space.n
+            action_space_shape = [env.action_space.n]
         else:
             raise Exception(f"Invalid action_space input argument: '{action_space}'\nValid arguments: 'discrete', 'multi_discrete'")
-        if type(env.observation_space) == gym.spaces.Box:
+        if isinstance(env.observation_space, gym.spaces.Box):
             self.observation_space = gym.spaces.Dict({
                 "image": env.observation_space,
                 "last_actions": gym.spaces.Box(
-                    low=np.array([np.zeros_like(action_space_shape, dtype=np.uint8)] * action_history_len),
-                    high=np.array(np.array([action_space_shape]* action_history_len, dtype=np.uint8)),
+                    low=np.array([np.zeros_like(action_space_shape)] * action_history_len),
+                    high=np.array(np.array([action_space_shape] * action_history_len)),
                     dtype=np.uint8,
                 )
             })
-        elif type(env.observation_space) == gym.space.Dict:
+        elif isinstance(env.observation_space, gym.spaces.Dict):
             self.observation_space = env.observation_space
-            self.observation_space.update({
-                "last_actions": gym.spaces.Box(
-                    low=np.array([np.zeros_like(action_space_shape, dtype=np.uint8)] * action_history_len),
-                    high=np.array(np.array([action_space_shape] * action_history_len, dtype=np.uint8)),
-                    dtype=np.uint8,
-                )
-            })
+            self.observation_space["last_actions"] = gym.spaces.Box(
+                low=np.array([np.zeros_like(action_space_shape)] * action_history_len),
+                high=np.array(np.array([action_space_shape] * action_history_len)),
+                dtype=np.uint8,
+            )
         else:
             raise Exception("Base env observation space must be Box or Dict")
         self.last_actions = np.array([np.zeros_like(action_space_shape, dtype=np.uint8)] * action_history_len)
@@ -406,7 +450,7 @@ class DefTrainWrapper(gym.Wrapper):
         self.last_health_value = new_health_value
         if self.timer_key is not None:
             reward += ((self.timer_max - obs[self.timer_key][0]) / (self.timer_max - self.timer_min)) * 1e-2
-        return obs, reward, terminated, truncated, info
+        return obs, reward.squeeze(), terminated, truncated, info
 
 
 class AttTrainWrapper(gym.Wrapper):
@@ -449,5 +493,5 @@ class AttTrainWrapper(gym.Wrapper):
         self.last_health_value = new_health_value
         if self.timer_key is not None:
             reward -= ((self.timer_max - obs[self.timer_key][0]) / (self.timer_max - self.timer_min)) * 1e-2
-        return obs, reward, terminated, truncated, info
+        return obs, reward.squeeze(), terminated, truncated, info
     

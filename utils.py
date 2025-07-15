@@ -6,133 +6,60 @@ import time
 import warnings
 import numpy as np
 import gymnasium as gym
+import torch as th
 import diambra.arena
 import configs
 
-from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings
-from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
 from stable_baselines3 import PPO
-from RND import RNDPPO
+from distillation_models import StudentDistilSolver
+from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
-from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common import type_aliases
-from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, VecMonitor, is_vecenv_wrapped
+from stable_baselines3.common.vec_env import VecEnv, DummyVecEnv, SubprocVecEnv, VecMonitor, is_vecenv_wrapped
+from stable_baselines3.common.utils import set_random_seed, obs_as_tensor
+from stable_baselines3.common import type_aliases, distributions
+from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Any, Callable, Optional, Union
-from torch.nn import functional as thF
 
 
-def load_agent(env: gym.Env, seed: int, policy_path: str, force_load: bool = False):
+def load_agent(env: gym.Env, policy_path: str, force_load: bool = False):
     """
-    Load either a PPO or an RNDPPO agent.
+    Load a PPO, RNDPPO, or DistilSolver agent.
 
     :param env: Environment for the agent to interact with.
-    :param seed: RNG seed.
     :param policy_path: Path to load the policy.
     :param force_load: If False and the given checkpoint is invalid, a new policy will be created.
     Otherwise, this will return an error.
     """
-    ppo_config = configs.ppo_settings
-    # Load policy params if checkpoint exists, else make a new agent
-    if os.path.isfile(policy_path + ".zip"):
-        print("\nCheckpoint found, loading policy")
-        if ppo_config["use_rnd"]:
-            agent = RNDPPO.load(
-                path=policy_path,
-                env=env,
-                int_beta=ppo_config["rnd_int_beta"],
-                rnd_model_args=ppo_config["rnd_model_args"],
-                gamma=ppo_config["gamma"],
-                learning_rate=linear_schedule(ppo_config["finetune_lr"][0], ppo_config["finetune_lr"][1]),
-                clip_range=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
-                clip_range_vf=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
-                policy_kwargs=configs.policy_kwargs,
-                tensorboard_log=configs.tensor_board_folder,
-                device=ppo_config["device"],
-                custom_objects={
-                    "action_space" : env.action_space,
-                    "observation_space" : env.observation_space,
-                }
-            )
-        else:
-            agent = PPO.load(
-                path=policy_path,
-                env=env,
-                gamma=ppo_config["gamma"],
-                learning_rate=linear_schedule(ppo_config["finetune_lr"][0], ppo_config["finetune_lr"][1]),
-                clip_range=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
-                clip_range_vf=linear_schedule(ppo_config["finetune_cr"][0], ppo_config["finetune_cr"][1]),
-                policy_kwargs=configs.policy_kwargs,
-                tensorboard_log=configs.tensor_board_folder,
-                device=ppo_config["device"],
-                custom_objects={
-                    "action_space" : env.action_space,
-                    "observation_space" : env.observation_space,
-                }
-            )
+    if policy_path[-4:] != ".zip":
+        policy_path = policy_path + ".zip"
+    
+    if os.path.isfile(policy_path):
+        print("\nCheckpoint found, loading policy.")
+        agent = configs.agent_type.load(
+            path=policy_path,
+            env=env,
+            # custom_objects={
+            #     "observation_space": env.observation_space
+            # },
+            **configs.policy_settings
+        )
     elif not force_load:
-        print("\nNo or invalid checkpoint given, creating new policy")
-        if ppo_config["use_rnd"]:
-            agent = RNDPPO(
-                policy=ppo_config["policy"],
-                env=env,
-                verbose=1,
-                int_beta=ppo_config["rnd_int_beta"],
-                rnd_model_args=ppo_config["rnd_model_args"],
-                gamma=ppo_config["gamma"],
-                batch_size=ppo_config["batch_size"],
-                n_epochs=ppo_config["n_epochs"],
-                n_steps=ppo_config["n_steps"],
-                learning_rate=linear_schedule(ppo_config["train_lr"][0], ppo_config["train_lr"][1]),
-                clip_range=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
-                clip_range_vf=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
-                policy_kwargs=configs.policy_kwargs,
-                gae_lambda=ppo_config["gae_lambda"],
-                ent_coef=ppo_config["ent_coef"],
-                vf_coef=ppo_config["vf_coef"],
-                max_grad_norm=ppo_config["max_grad_norm"],
-                use_sde=ppo_config["use_sde"],
-                sde_sample_freq=ppo_config["sde_sample_freq"],
-                normalize_advantage=ppo_config["normalize_advantage"],
-                stats_window_size=ppo_config["stats_window_size"],
-                target_kl=ppo_config["target_kl"],
-                tensorboard_log=configs.tensor_board_folder,
-                device=configs.ppo_settings["device"],
-                seed=seed
-            )
-        else:
-            agent = PPO(
-                policy=ppo_config["policy"],
-                env=env,
-                verbose=1,
-                gamma=ppo_config["gamma"],
-                batch_size=ppo_config["batch_size"],
-                n_epochs=ppo_config["n_epochs"],
-                n_steps=ppo_config["n_steps"],
-                learning_rate=linear_schedule(ppo_config["train_lr"][0], ppo_config["train_lr"][1]),
-                clip_range=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
-                clip_range_vf=linear_schedule(ppo_config["train_cr"][0], ppo_config["train_cr"][1]),
-                policy_kwargs=configs.policy_kwargs,
-                gae_lambda=ppo_config["gae_lambda"],
-                ent_coef=ppo_config["ent_coef"],
-                vf_coef=ppo_config["vf_coef"],
-                max_grad_norm=ppo_config["max_grad_norm"],
-                use_sde=ppo_config["use_sde"],
-                sde_sample_freq=ppo_config["sde_sample_freq"],
-                normalize_advantage=ppo_config["normalize_advantage"],
-                stats_window_size=ppo_config["stats_window_size"],
-                target_kl=ppo_config["target_kl"],
-                tensorboard_log=configs.tensor_board_folder,
-                device=configs.ppo_settings["device"],
-                seed=seed
-            )
+        agent = configs.agent_type(env=env, **configs.policy_settings)
     else:
-        raise Exception("Checkpoint not found, check whether path is accurate.")
-
+        raise Exception("\nInvalid checkpoint, please check policy path provided.")
+    
     # Print policy network architecture
     print("Policy architecture:")
     print(agent.policy)
 
+    if configs.teachers and configs.misc["distil_policy"]:
+        solver = StudentDistilSolver(
+            student=agent,
+            teachers=configs.teachers,
+            probabilities=configs.teacher_probabilities
+        )
+        return solver
+    
     return agent
 
 
@@ -206,14 +133,15 @@ def train_eval_split(game_id: str,
 
     if seed is not None:
         set_random_seed(seed)
-    #########################################################################################################################################
         
     return train_env, eval_env
+    #########################################################################################################################################
 
 
 def evaluate_policy_with_arcade_metrics(
     model: "type_aliases.PolicyPredictor",
     env: Union[gym.Env, VecEnv],
+    teachers: dict[str: OnPolicyAlgorithm] = None,
     n_eval_episodes: int = 10,
     deterministic: bool = True,
     render: bool = False,
@@ -280,87 +208,111 @@ def evaluate_policy_with_arcade_metrics(
     arcade_runs_completed = []  # Number of full arcade runs completed across envs
     current_stages_completed = np.zeros(n_envs, dtype=np.float64)
     current_arcade_runs_completed = np.zeros(n_envs, dtype=np.float64)
+    student_teacher_divergences = {}
+    if teachers is not None:
+        for id in teachers.keys():
+            student_teacher_divergences.update({id: []})
     #############################################################################
 
-    while (episode_counts < episode_count_targets).any():
-        actions, states = model.predict(
-            observations,  # type: ignore[arg-type]
-            state=states,
-            episode_start=episode_starts,
-            deterministic=deterministic,
-        )
-        new_observations, rewards, dones, infos = env.step(actions)
-        current_rewards += rewards
-        current_lengths += 1
-        for i in range(n_envs):
-            if episode_counts[i] < episode_count_targets[i]:
-                # unpack values so that the callback can access the local variables
-                reward = rewards[i]
-                done = dones[i]
-                info = infos[i]
-                episode_starts[i] = done
+    with th.no_grad():
+        while (episode_counts < episode_count_targets).any():
+            actions, states = model.predict(
+                observations,  # type: ignore[arg-type]
+                state=states,
+                episode_start=episode_starts,
+                deterministic=deterministic,
+            )
+            new_observations, rewards, dones, infos = env.step(actions)
+            current_rewards += rewards
+            current_lengths += 1
 
-                if callback is not None:
-                    callback(locals(), globals())
-                
-                ############################### MODIFIED ##########################
-                if info["stage_done"]:
-                    current_stages_completed[i] += 1
-                    # Increment evey time the final stage is successfully completed
-                    if done:
-                        current_arcade_runs_completed[i] += 1
-                ###################################################################
+            ############################################ MODIFIED ##########################################
+            if teachers is not None:
+                tensor_obs = obs_as_tensor(observations, model.device)
+                student_act_distribution = model.policy.get_distribution(tensor_obs)
+                for id, teacher in teachers.items():
+                    teacher_act_distribution = teacher.policy.get_distribution(tensor_obs)
+                    kl_div = distributions.kl_divergence(teacher_act_distribution, student_act_distribution)
+                    if isinstance(
+                        teacher_act_distribution,
+                        (distributions.DiagGaussianDistribution,
+                            distributions.StateDependentNoiseDistribution)
+                    ):
+                        kl_div = distributions.sum_independent_dims(kl_div)
+                    kl_div = th.mean(kl_div).cpu().detach().numpy().tolist()
+                    student_teacher_divergences[id].append(kl_div)
+            ################################################################################################
 
-                if dones[i]:
-                    if is_monitor_wrapped:
-                        # Atari wrapper can send a "done" signal when
-                        # the agent loses a life, but it does not correspond
-                        # to the true end of episode
-                        if "episode" in info.keys():
-                            # Do not trust "done" with episode endings.
-                            # Monitor wrapper includes "episode" key in info if environment
-                            # has been wrapped with it. Use those rewards instead.
-                            episode_rewards.append(info["episode"]["r"])
-                            episode_lengths.append(info["episode"]["l"])
-                            # Only increment at the real end of an episode
+            for i in range(n_envs):
+                if episode_counts[i] < episode_count_targets[i]:
+                    # unpack values so that the callback can access the local variables
+                    reward = rewards[i]
+                    done = dones[i]
+                    info = infos[i]
+                    episode_starts[i] = done
+
+                    if callback is not None:
+                        callback(locals(), globals())
+                    
+                    ############################### MODIFIED ##########################
+                    if info["stage_done"]:
+                        current_stages_completed[i] += 1
+                        # Increment evey time the final stage is successfully completed
+                        if done:
+                            current_arcade_runs_completed[i] += 1
+                    ###################################################################
+
+                    if dones[i]:
+                        if is_monitor_wrapped:
+                            # Atari wrapper can send a "done" signal when
+                            # the agent loses a life, but it does not correspond
+                            # to the true end of episode
+                            if "episode" in info.keys():
+                                # Do not trust "done" with episode endings.
+                                # Monitor wrapper includes "episode" key in info if environment
+                                # has been wrapped with it. Use those rewards instead.
+                                episode_rewards.append(info["episode"]["r"])
+                                episode_lengths.append(info["episode"]["l"])
+                                # Only increment at the real end of an episode
+                                episode_counts[i] += 1
+                        else:
+                            episode_rewards.append(current_rewards[i])
+                            episode_lengths.append(current_lengths[i])
                             episode_counts[i] += 1
-                    else:
-                        episode_rewards.append(current_rewards[i])
-                        episode_lengths.append(current_lengths[i])
-                        episode_counts[i] += 1
-                    current_rewards[i] = 0
-                    current_lengths[i] = 0
-                    ######################## MODIFIED ############################
-                    stages_completed.append(current_stages_completed[i])
-                    arcade_runs_completed.append(current_arcade_runs_completed[i])
-                    current_stages_completed[i] = 0
-                    current_arcade_runs_completed[i] = 0
-                    ##############################################################
+                        ######################## MODIFIED ############################
+                        stages_completed.append(current_stages_completed[i])
+                        arcade_runs_completed.append(current_arcade_runs_completed[i])
+                        current_stages_completed[i] = 0
+                        current_arcade_runs_completed[i] = 0
+                        ##############################################################
+                        current_rewards[i] = 0
+                        current_lengths[i] = 0
 
-        observations = new_observations
+            observations = new_observations
 
-        if render:
-            env.render()
+            if render:
+                env.render()
 
     mean_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)
 
-    ########################### MODIFIED #################################
-    # Normalize by episode count targets before calculating mean and std
+    ####################################### MODIFIED ########################################
     mean_stages = np.mean(stages_completed)
     std_stages = np.std(stages_completed)
     mean_arcade_runs = np.mean(arcade_runs_completed)
     std_arcade_runs = np.std(arcade_runs_completed)
-    ######################################################################
+    avg_kl_divs = {id: np.mean(kl_div) for id, kl_div in student_teacher_divergences.items()}
+    std_kl_divs = {id: np.std(kl_div) for id, kl_div in student_teacher_divergences.items()}
+    #########################################################################################
 
     if reward_threshold is not None:
         assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
     
     if return_episode_rewards:
-    ######################################## MODIFIED ##############################################
-        return episode_rewards, episode_lengths, stages_completed, arcade_runs_completed
-    return (mean_reward, std_reward), (mean_stages, std_stages), (mean_arcade_runs, std_arcade_runs)
-    ################################################################################################
+    #################################################### MODIFIED ###############################################################
+        return episode_rewards, episode_lengths, stages_completed, arcade_runs_completed, student_teacher_divergences
+    return (mean_reward, std_reward), (mean_stages, std_stages), (mean_arcade_runs, std_arcade_runs), (avg_kl_divs, std_kl_divs)
+    #############################################################################################################################
 
 
 def eval_student_teacher_likelihood(

@@ -73,19 +73,12 @@ def get_transitions(data_loader: DiambraDataLoader, agent_num: int = None):
 
 
 def main(
-    dataset_path_input: str, 
-    train_id: str,
+    dataset_path_input: str,
     agent_num: int,
     policy_path: str,
     deterministic: bool,
-    num_players: int,
+    n_eval_episodes: int,
 ):
-    assert train_id in configs.game_ids, f"Invalid game id ({train_id}), available ids: [{configs.game_ids}]"
-
-    # Load configs
-    settings_config = configs.env_settings
-    ppo_config = configs.ppo_settings
-
     if dataset_path_input is not None:
         dataset_path = dataset_path_input
     else:
@@ -96,13 +89,6 @@ def main(
     imitation_data_loader = DiambraDataLoader(dataset_path)
     transitions = get_transitions(imitation_data_loader, agent_num=agent_num)
     print("\nTransitions loaded")
-
-    # Load envs
-    assert num_players in [1,2]
-    if num_players == 1:
-        train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_1p_settings(game_id=train_id)
-    else:
-        train_settings, eval_settings, train_wrappers, eval_wrappers = configs.load_2p_settings(game_id=train_id)
     if deterministic:
         # Due to DIAMBRA's implementation, selecting the same action each frame corresponds to holding down tthe button for that action.
         # This means that an attack the policy is trying to spam each frame won't come out after the first button press, as holding
@@ -110,31 +96,28 @@ def main(
         # which is the same as the previous frame's to 0, which stops the env interpreting that attack button as held down and allows the
         # policy to send out another attack. This is particularly important for deterministic policies, as they often converge to relying
         # on one or two attacks no matter the situation, and are particularly prone to this button hold "bug".
-        eval_wrappers.wrappers.append([cw.NoOpWrapper, {
-            "action_space_type": "discrete" if eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+        configs.eval_wrappers.wrappers.append([cw.NoOpWrapper, {
+            "action_space_type": "discrete" if configs.eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
             "no_attack": 0,
         }])
-
-    num_train_envs = settings_config["num_train_envs"] 
-    num_eval_envs = settings_config["num_eval_envs"]
+        
     train_env, eval_env = train_eval_split(
-        game_id=train_id,
-        num_train_envs=num_train_envs,
-        num_eval_envs=num_eval_envs,
-        train_settings=train_settings,
-        eval_settings=eval_settings,
-        train_wrappers=train_wrappers,
-        eval_wrappers=eval_wrappers,
-        seed=settings_config["seed"]
+        game_id=configs.general_settings["game_id"],
+        num_train_envs=configs.misc["num_train_envs"],
+        num_eval_envs=configs.misc["num_eval_envs"],
+        train_settings=configs.train_settings,
+        eval_settings=configs.eval_settings,
+        train_wrappers=configs.train_wrappers,
+        eval_wrappers=configs.eval_wrappers,
+        seed=configs.misc["seed"]
     )
     # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
     train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
-    print(f"\nActivated {num_train_envs + num_eval_envs} environment(s)")
 
-    model_checkpoint = ppo_config["model_checkpoint"]
-    save_path = os.path.join(configs.model_folder, f"seed_{settings_config['seed']}")
+    model_checkpoint = configs.misc["model_checkpoint"]
+    save_path = os.path.join(configs.model_folder, f"seed_{configs.misc['seed']}")
     checkpoint_path = os.path.join(save_path, model_checkpoint) if not policy_path else policy_path
-    agent = load_agent(env=train_env, seed=settings_config["seed"], policy_path=checkpoint_path)
+    agent = load_agent(env=train_env, policy_path=checkpoint_path)
 
     # Set new imitation logger
     imit_log = imit_logger.configure(configs.tensor_board_folder, ["stdout", "tensorboard"])
@@ -144,9 +127,9 @@ def main(
         observation_space=train_env.observation_space,
         action_space=train_env.action_space,
         demonstrations=transitions,
-        rng=np.random.default_rng(seed=configs.env_settings["seed"]),
+        rng=np.random.default_rng(seed=agent.seed),
         policy=agent.policy,
-        device=configs.ppo_settings["device"],
+        device=agent.device,
         custom_logger=imit_log,
     )
 
@@ -171,10 +154,10 @@ def main(
     )
 
     eval_results = {}
-    reward_infos, episode_lengths, stages_infos, arcade_infos = evaluate_policy_with_arcade_metrics(
+    reward_infos, episode_lengths, stages_infos, arcade_infos, _ = evaluate_policy_with_arcade_metrics(
         model=agent,
         env=eval_env,
-        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
+        n_eval_episodes=n_eval_episodes,
         deterministic=deterministic,
         return_episode_rewards=True,
     )
@@ -201,14 +184,14 @@ def main(
         print("Ending imitation learning early, saving model")
 
     # Save imitated policy
-    imitation_folder = os.path.join(configs.model_folder, f"seed_{settings_config['seed']}", "trainer")
+    imitation_folder = os.path.join(configs.model_folder, f"seed_{configs.misc['seed']}", "trainer")
     agent.policy = trainer.policy
     agent.save(os.path.join(imitation_folder, "trainer_policy"))
 
-    reward_infos, episode_lengths, stages_infos, arcade_infos = evaluate_policy_with_arcade_metrics(
+    reward_infos, episode_lengths, stages_infos, arcade_infos, _ = evaluate_policy_with_arcade_metrics(
         model=agent,
         env=eval_env,
-        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
+        n_eval_episodes=n_eval_episodes,
         deterministic=deterministic,
         return_episode_rewards=True,
     )
@@ -236,7 +219,7 @@ def main(
         base_path,
         model_path,
         "model",
-        f"seed_{configs.env_settings['seed']}",
+        f"seed_{configs.misc['seed']}",
         "trainer",
         "imitation_learning_results.json"
     )
@@ -248,18 +231,16 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str, required=True, help="Path to imitation trajectories")
-    parser.add_argument("--train_id", type=str, required=False, help="Specific game to train on", default="sfiii3n")
-    parser.add_argument("--num_players", type=int, required=False, help="Number of players in the env", default=1)
     parser.add_argument("--policy_path", type=str, required=False, help="Path to load pre-trained policy", default=None)
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Whether to follow a deterministic or stochastic policy", default=True)
     parser.add_argument("--agent_num", type=int, required=False, help="Agent number (if trajectories come from multiagent env)", default=None)
+    parser.add_argument("--n_eval_episodes", type=int, required=False, help="Number of episodes to complete during evaluations", default=100)
     opt = parser.parse_args()
 
     main(
         dataset_path_input=opt.dataset_path,    # Path to episode recordings
-        train_id=opt.train_id,                  # ID of game to train on
         agent_num=opt.agent_num,                # Agent number to retrieve actions from (if recordings are of 2p env)
         policy_path=opt.policy_path,            # Path to specific policy 
         deterministic=opt.deterministic,        # Whether to evaluate deterministic or stochastic policy
-        num_players=opt.num_players,            # 1 or 2 player env
+        n_eval_episodes=opt.n_eval_episodes     # Number of evaluation episodes
     )

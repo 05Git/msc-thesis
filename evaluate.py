@@ -12,76 +12,61 @@ from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env
 from utils import load_agent, evaluate_policy_with_arcade_metrics, eval_student_teacher_likelihood
 from diambra.arena import SpaceTypes
 
-# diambra run -s _ python evaluate.py --eval_id _ --num_players _ --dir_name _ --policy_path _ --deterministic
+# diambra run -s _ python evaluate.py --eval_dir_name _ --policy_path _ --deterministic
 
-def main(
-    eval_id: str,
-    num_players: int,
-    deterministic: bool,
-    dir_name: str,
-    policy_path: str,
-):
-    assert eval_id in configs.game_ids, f"Invalid game id ({eval_id}), available ids: [{configs.game_ids}]"
-
-    # Load configs
-    settings_config = configs.env_settings
-    ppo_config = configs.ppo_settings
-
-    # Load envs
-    assert num_players in [1,2]
-    if num_players == 1:
-        _, eval_settings, _, eval_wrappers = configs.load_1p_settings(game_id=eval_id)
-    else:
-        _, eval_settings, _, eval_wrappers = configs.load_2p_settings(game_id=eval_id)
+def main(deterministic: bool, dir_name: str, policy_path: str):
     if deterministic:
-        eval_wrappers.wrappers.append([cw.NoOpWrapper, {
-            "action_space_type": "discrete" if eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+        configs.eval_wrappers.wrappers.append([cw.NoOpWrapper, {
+            "action_space_type": "discrete" if configs.eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
             "no_attack": 0,
         }])
 
-    eval_env, num_envs = make_sb3_env(
-        game_id=eval_id,
-        env_settings=eval_settings,
-        wrappers_settings=eval_wrappers,
-        seed = settings_config["seed"]
+    eval_env, _ = make_sb3_env(
+        game_id=configs.eval_settings.game_id,
+        env_settings=configs.eval_settings,
+        wrappers_settings=configs.eval_wrappers,
+        seed = configs.misc["seed"]
     )
     eval_env = VecTransposeImage(eval_env)
-    set_random_seed(settings_config["seed"])
+    set_random_seed(configs.misc["seed"])
 
-    model_checkpoint = ppo_config["model_checkpoint"]
-    save_path = os.path.join(configs.model_folder, f"seed_{settings_config['seed']}")
+    model_checkpoint = configs.misc["model_checkpoint"]
+    save_path = os.path.join(configs.model_folder, f"seed_{configs.misc['seed']}")
     checkpoint_path = os.path.join(save_path, model_checkpoint) if not policy_path else policy_path
-    agent = load_agent(env=eval_env, seed=settings_config["seed"], policy_path=checkpoint_path, force_load=True)
+    agent = load_agent(env=eval_env, policy_path=checkpoint_path, force_load=True)
 
-    reward_infos, episode_lengths, stages_infos, arcade_infos = evaluate_policy_with_arcade_metrics(
+    reward_infos, episode_lengths, stages_infos, arcade_infos, kl_divs = evaluate_policy_with_arcade_metrics(
         model=agent,
         env=eval_env,
-        n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
+        teachers=configs.teachers,
+        n_eval_episodes=configs.misc["n_eval_episodes"],
         deterministic=deterministic,
         return_episode_rewards=True,
     )
-
     eval_results = {
         "model": checkpoint_path,
-        "characters": eval_settings.characters,
+        "characters": configs.eval_settings.characters,
         "rewards_infos": reward_infos,
         "episode_lengths": episode_lengths,
         "stages_infos": stages_infos,
         "arcade_runs_infos": arcade_infos,
+        "kl_divergences": kl_divs,
         "mean_reward": np.mean(reward_infos),
         "std_reward": np.std(reward_infos),
         "mean_stages": np.mean(stages_infos),
         "std_stages": np.std(stages_infos),
         "mean_arcade_runs": np.mean(arcade_infos),
         "std_arcade_runs": np.std(arcade_infos),
+        "mean_kl_divs": {id: np.mean(kl_div) for id, kl_div in kl_divs.items()},
+        "std_kl_divs": {id: np.std(kl_div) for id, kl_div in kl_divs.items()},
     }
     
-    if configs.wrappers_options["use_teachers"]:
+    if "teacher_input" in configs.wrappers_settings.keys() and configs.wrappers_settings["teacher_input"]:
         teacher_act_counts, teacher_act_means, teacher_act_stds = eval_student_teacher_likelihood(
             student=agent,
-            num_teachers=len(configs.teacher_paths),
+            num_teachers=len(configs.teachers),
             env=eval_env,
-            n_eval_episodes=configs.callbacks_settings["n_eval_episodes"],
+            n_eval_episodes=configs.misc["n_eval_episodes"],
             deterministic=deterministic,
         )
 
@@ -116,15 +101,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval_dir_name", type=str, required=False, help="Name of evaluations directory", default="evaluation_results")
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Evaluate deterministic or stochastic policy", default=True)
-    parser.add_argument("--eval_id", type=str, required=False, help="Specific game to eval on", default="sfiii3n")
-    parser.add_argument("--num_players", type=int, required=False, help="Number of players in the env", default=1)
     parser.add_argument("--policy_path", type=str, required=False, help="Path to load pre-trained policy", default=None)
     opt = parser.parse_args()
 
     main(
         deterministic=opt.deterministic,
         dir_name=opt.eval_dir_name,
-        eval_id=opt.eval_id,
-        num_players=opt.num_players,
         policy_path=opt.policy_path,
     )

@@ -1,17 +1,153 @@
 """
-configs.py: Adjust the settings and hyperparams for training and evaluating policies
-Design follows example set by ___
+configs.py: _.
 """
 import os
+import yaml
 import torch as th
 import custom_wrappers as cw
 
 from stable_baselines3 import PPO
+from RND import RNDPPO
 from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings, SpaceTypes, load_settings_flat_dict
-from filter_keys import get_filter_keys
-from custom_networks import  CustomCNN
+from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
 
+# IDs of games currently implemented
+game_ids = [
+    "sfiii3n",
+    # "samsh5sp",
+    # "kof98umh",
+    # "umk3",
+]
 
+# Device
+device = th.device("cuda" if th.cuda.is_available() else "cpu")
+
+config_path = "configs/test_config.yaml"
+config_file = open(config_path)
+params = yaml.load(config_file, Loader=yaml.FullLoader)
+config_file.close()
+
+param_keys: dict.keys = params.keys()
+misc: dict = params["misc"]
+assert misc["num_players"] in [1, 2]
+
+env_settings: dict = params["env_settings"]
+general_settings: dict = env_settings["shared"]
+assert general_settings["game_id"] in game_ids
+general_settings["action_space"] = SpaceTypes.DISCRETE if general_settings["action_space"] == "discrete" else SpaceTypes.MULTI_DISCRETE
+if misc["num_players"] == 2:
+    general_settings["action_space"] = (general_settings["action_space"], general_settings["action_space"])
+
+# Set the path that the model and tensorboards will be saved to
+base_path = os.path.dirname(os.path.abspath(__file__))
+folders: dict = params["folders"]
+model_folder = os.path.join(
+    base_path,
+    folders["parent_dir"],
+    folders["model_name"],
+    "model"
+)
+tensor_board_folder = os.path.join(
+    base_path,
+    folders["parent_dir"],
+    folders["model_name"],
+    "tb"
+)
+# Make sure these paths exist
+os.makedirs(model_folder, exist_ok=True)
+os.makedirs(tensor_board_folder, exist_ok=True)
+
+if "teachers" in param_keys:
+    teachers: dict = params["teachers"] # Dictionaries containing teacher IDs and paths
+    for id, path in teachers.items():
+        teacher = PPO.load(path=path, device=device)
+        teachers[id] = teacher
+    teacher_probabilities: list[float] = params["teacher_probabilities"]
+else:
+    teachers = None
+    teacher_probabilities = None
+
+train_settings: dict = env_settings["train"]
+train_settings.update(general_settings.copy())
+eval_settings: dict = env_settings["eval"]
+eval_settings.update(general_settings.copy())
+
+wrappers_settings: dict = params["wrappers_settings"]
+wrapper_aliases = {
+    "pixelobs": cw.PixelObsWrapper,
+    "teacher_input": cw.TeacherInputWrapper,
+    "add_last_action": cw.AddLastActions,
+    "action_mask": cw.ActionMaskWrapper,
+    "opp_controller": cw.OpponentController,
+    "interleave": cw.InterleavingWrapper,
+    "def_train": cw.DefTrainWrapper,
+    "att_train": cw.AttTrainWrapper,
+    "2ptrain": cw.TwoPTrainWrapper,
+}
+for wrapper in wrappers_settings["wrappers"]:
+    assert wrapper[0] in wrapper_aliases.keys()
+    if wrapper[0] == "teacher_input":
+        wrapper[1]["teachers"] = teachers
+    wrapper[0] = wrapper_aliases[wrapper[0]]
+
+train_wrappers: dict = wrappers_settings.copy()
+train_wrappers["wrappers"] = wrappers_settings["wrappers"].copy()
+if type(train_settings["characters"]) == list:
+    train_wrappers["wrappers"].append([cw.InterleavingWrapper, {
+        "character_list": train_settings["characters"],
+        "one_p_env": misc["num_players"] == 1,
+    }])
+    train_settings["characters"] = train_settings["characters"][0]
+
+eval_wrappers: dict = wrappers_settings.copy()
+eval_wrappers["wrappers"] = wrappers_settings["wrappers"].copy()
+if type(eval_settings["characters"]) == list:
+    eval_wrappers["wrappers"].append([cw.InterleavingWrapper, {
+        "character_list": eval_settings["characters"],
+        "one_p_env": misc["num_players"] == 1,
+    }])
+    eval_settings["characters"] = eval_settings["characters"][0]
+
+if misc["num_players"] == 1:
+    train_settings = load_settings_flat_dict(EnvironmentSettings, train_settings)
+    eval_settings = load_settings_flat_dict(EnvironmentSettings, eval_settings)
+else:
+    train_settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, train_settings)
+    eval_settings = load_settings_flat_dict(EnvironmentSettingsMultiAgent, eval_settings)
+train_wrappers = load_settings_flat_dict(WrappersSettings, train_wrappers)
+eval_wrappers = load_settings_flat_dict(WrappersSettings, eval_wrappers)
+
+policy_settings: dict = params["policy_settings"]
+assert policy_settings["batch_size"] % misc["num_train_envs"] == 0
+policy_settings.update({"device": device})
+policy_settings.update({"seed": misc["seed"]})
+policy_settings["learning_rate"] = linear_schedule(
+    policy_settings["learning_rate"][0],
+    policy_settings["learning_rate"][1]
+)
+policy_settings["clip_range"] = linear_schedule(
+    policy_settings["clip_range"][0],
+    policy_settings["clip_range"][1]
+)
+policy_settings["clip_range_vf"] = policy_settings["clip_range"]
+policy_settings["tensorboard_log"] = tensor_board_folder
+agent_type = PPO
+
+callbacks_settings: dict = params["callbacks_settings"]
+
+if "rnd_settings" in param_keys:
+    rnd_settings: dict = params["rnd_settings"]
+    policy_settings.update(rnd_settings)
+    agent_type = RNDPPO
+
+if "imitation_settings" in param_keys:
+    imitation_settings: dict = params["imitation_settings"]
+
+if "policy_kwargs" in param_keys:
+    policy_kwargs: dict = params["policy_kwargs"]
+    policy_settings.update({"policy_kwargs": policy_kwargs})
+
+"""
 action_space = SpaceTypes.MULTI_DISCRETE    # Can be either DISCRETE or MULTI_DISCRETE spaces
 frame_shape = (4, 84, 84)                   # SB3 expects channel first
 env_settings = {                            # Adjustable environment settings
@@ -94,22 +230,27 @@ wrappers_settings = {
 # Choose whether to use specific custom wrappers or not
 wrappers_options = {
     "add_last_actions": False,
-    "use_teachers": False,
+    "add_teacher_obs": False,
 }
 
 # Paths to teach policies for distillation
 teacher_paths = [
-    "experts/ryu_vs_alex/attack_expert_rand/model/seed_0/500000.zip",
-    "experts/ryu_vs_alex/def_expert_rand/model/seed_0/500000.zip",
-    "experts/ryu_vs_alex/anti_air_expert/model/seed_0/500000.zip",
+    # "experts/bc_policies/antiair_simple/model/seed_0/trainer/trainer_policy.zip",
+    # "experts/bc_policies/jump_ins_simple/model/seed_0/trainer/trainer_policy.zip",
+    # "experts/bc_policies/defence_simple/model/seed_0/trainer/trainer_policy.zip",
+    "experts/from_scratch/antiair/model/seed_0/500000.zip",
+    "experts/from_scratch/attack_rand/model/seed_0/500000.zip",
+    "experts/from_scratch/defence/model/seed_0/500000.zip",
+    "final_policies/base_agents/ryu_vanilla/model/seed_0/2000000.zip",
 ]
+teacher_probabilities = []
 
 def load_teachers():
     teachers = []
     for path in teacher_paths:
-        teacher = PPO.load(path=path, device=ppo_settings["device"])
+        teacher = PPO.load(path=path, device=policy_settings["device"])
         teachers.append(teacher)
-    
+
     return teachers
 
 # List of custom wrappers for 1 and 2 player envs
@@ -125,7 +266,7 @@ wrappers_1p = [
 
 wrappers_2p = [
     [cw.OpponentController, {
-        "opp_type": "no_op"
+        "opp_type": "rand"
     }],
     # [cw.ActionMaskWrapper, {
     #     "action_space": "discrete" if env_settings["2_player"]["shared"]["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
@@ -135,13 +276,13 @@ wrappers_2p = [
     # }],
     [cw.AttTrainWrapper, {}],
     [cw.PixelObsWrapper, {}],
-    [cw.BCTrainerWrapper, {}],
+    [cw.TwoPTrainWrapper, {}],
 ]
 
 # Director path the policy, tensorboard and other items will be saved to
 folders = {
-    "parent_dir": "experts/bc_policies",
-    "model_name": "antiair_simple",
+    "parent_dir": "distil_policies",
+    "model_name": "finetuned_ryu_vanilla",
 }
 
 # See __ for how to set custom architecture with policy_kwargs
@@ -157,7 +298,8 @@ batch_lambda = 8
 batch_size = ((n_steps * env_settings["num_train_envs"]) // nminibatches) * batch_lambda
 assert (n_steps * env_settings["num_train_envs"]) % nminibatches == 0
 
-ppo_settings = {
+policy_settings = {
+    "policy_type": "student-distil",   # ppo / rnd / student-distil
     "policy": "CnnPolicy",
     "model_checkpoint": "0",
     "time_steps": 2_000_000,
@@ -179,7 +321,6 @@ ppo_settings = {
     "sde_sample_freq": -1,
     "normalize_advantage": True,
     "stats_window_size": 100,
-    "use_rnd": False,        # Set to True to use Random Network Distillation (enhances policy exploration)
     "rnd_int_beta": 1e-3,   # Some float less than 0, to reduce the scale of the intrinsic reward
     "rnd_model_args": {     # RND model arguments
         "image_shape": frame_shape,
@@ -218,11 +359,11 @@ imitation_settings = {
 }
 
 def load_1p_settings(game_id: str):
-    """
+    
     Load settings for a 1 player env.
 
     :param game_id: ID of which game to load an env for. 
-    """
+    
     # Load the settings shared between the train and eval envs into a dictionary,
     # then create specific dictionaries for the train and eval envs
     general_settings = env_settings["1_player"]["shared"]
@@ -265,10 +406,10 @@ def load_1p_settings(game_id: str):
     
     # Load teachers for policy distillation
     # This is done after loading the env settings classes to circumvent stable_baselines3 not allowing nested observation spaces
-    if wrappers_options["use_teachers"]:
+    if wrappers_options["add_teacher_obs"]:
         teacher_wrapper = [cw.TeacherInputWrapper, {
             "teachers": load_teachers(),
-            "timesteps": ppo_settings["time_steps"],
+            "timesteps": policy_settings["time_steps"],
             "deterministic": True,
             "teacher_action_space": "discrete" if general_settings["action_space"] == SpaceTypes.DISCRETE else "multi_discrete",
             "use_teacher_actions": False,
@@ -291,11 +432,11 @@ def load_1p_settings(game_id: str):
     return train_settings, eval_settings, train_wrappers, eval_wrappers
 
 def load_2p_settings(game_id: str):
-    """
+    
     Load settings for a 2 player env.
 
     :param game_id: ID of which game to load an env for. 
-    """
+    
     # Load the settings shared between the train and eval envs into a dictionary,
     # then create specific dictionaries for the train and eval envs
     general_settings = env_settings["2_player"]["shared"]
@@ -338,10 +479,10 @@ def load_2p_settings(game_id: str):
 
     # Load teachers for policy distillation
     # This is done after loading the env settings classes to circumvent stable_baselines3 not allowing nested observation spaces
-    if wrappers_options["use_teachers"]:
+    if wrappers_options["add_teacher_obs"]:
         teacher_wrapper = [cw.TeacherInputWrapper, {
             "teachers": load_teachers(),
-            "timesteps": ppo_settings["time_steps"],
+            "timesteps": policy_settings["time_steps"],
             "deterministic": True,
             "teacher_action_space": "discrete" if general_settings["action_space"][0] == SpaceTypes.DISCRETE else "multi_discrete",
             "use_teacher_actions": False,
@@ -388,3 +529,4 @@ game_ids = [
     # "kof98umh",
     # "umk3",
 ]
+"""

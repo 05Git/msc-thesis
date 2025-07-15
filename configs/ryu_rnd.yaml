@@ -1,0 +1,89 @@
+folders:
+  parent_dir: final_policies/base_agents
+  model_name: ryu_rnd
+
+misc:
+  seed: 0
+  num_players: 1
+  num_train_envs: 8
+  num_eval_envs: 4
+  timesteps: 2_000_000
+  model_checkpoint: "0"
+  n_eval_episodes: 100
+  distil_policy: False
+
+policy_settings:
+  policy: CnnPolicy
+  gamma: 0.99
+  learning_rate: [2.5e-5, 2.5e-6]
+  clip_range: [0.15, 0.025]
+  # learning_rate: [5.0e-5, 2.5e-6] # Finetuning
+  # clip_range: [0.075, 0.025]      # Finetuning
+  n_epochs: 10
+  n_steps: 128
+  batch_size: 1024 # batch_size % num_envs should equal 0
+  gae_lambd: 0.95
+  ent_coef: 0.
+  vf_coef: 0.5
+  target_kl: null
+  max_grad_norm: 0.5
+  use_sde: False
+  sde_sample_freq: -1
+  normalize_advantage: True
+  stats_window_size: 100
+  verbose: 1
+
+rnd_settings:
+  int_beta: 1.e-3
+  rnd_model_args:
+    image_shape: !!python/tuple [4, 84, 84] # SB3 expects (C,H,W)
+    action_size: 2
+    vec_fc_size: 128
+    feature_size: 128 # Best behaviour so far: 128
+    rnd_type: state
+    optim_args:
+      lr: 1.e-4
+      betas: !!python/tuple [0.9, 0.999]
+      eps: 1.e-8
+      weight_decay: 0.
+
+callbacks:
+  autosave: True
+  check_freq: 500_000
+  arcade_metrics: True
+
+env_settings:
+  shared:
+    game_id: sfiii3n
+    step_ratio: 6
+    frame_shape: [84, 84, 1]
+    continue_game: 0.
+    action_space: multi_discrete
+    outfits: 1
+    splash_screen: False
+  train:
+    characters: Ryu
+    difficulty: 6
+    super_art: 1
+  eval:
+    characters: Ryu
+    difficulty: 6
+    super_art: 1
+
+wrappers_settings:
+  normalize_reward: True
+  normalization_factor: 1.0
+  no_attack_buttons_combinations: False
+  stack_frames: 4
+  dilation: 1
+  add_last_action: False
+  stack_actions: 1
+  repeat_action: 1
+  scale: False
+  exclude_image_scaling: False
+  role_relative: False
+  filter_keys: [frame]
+  flatten: True
+  wrappers: [
+    [pixelobs, {}],
+  ]

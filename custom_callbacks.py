@@ -2,6 +2,7 @@ import numpy as np
 import warnings
 import os
 import gymnasium as gym
+import configs
 
 from stable_baselines3.common.callbacks import BaseCallback, EventCallback
 from stable_baselines3.common.vec_env import VecEnv, sync_envs_normalization
@@ -143,13 +144,14 @@ class ArcadeMetricsEvalCallback(EventCallback):
         self.evaluations_successes: list[list[bool]] = []
 
         #############################################
-        # Custom arcade metrics                     #
+        # Custom arcade metrics
         self.stages_comp: list[list[float]] = []
         self.arcade_runs_comp: list[list[float]] = []
+        self.student_teacher_divergences = []
         #############################################
         
         ###############################################################################################
-        # Ensure subsequent episodes don't overwrite best models from previous episodes               #
+        # Ensure subsequent episodes don't overwrite best models from previous episodes
         self.model_save_name = f"{episode_num}_best_model" if episode_num is not None else "best_model"
         ###############################################################################################
 
@@ -202,11 +204,12 @@ class ArcadeMetricsEvalCallback(EventCallback):
             # Reset success rate buffer
             self._is_success_buffer = []
 
-            ################################################################################################################
-            # Use cutom evaluation function to return arcade metrics                                                       #
-            episode_rewards, episode_lengths, stages_completed, arcade_runs_completed = evaluate_policy_with_arcade_metrics(
+            ################################################################################################################################
+            # Use cutom evaluation function to return arcade metrics
+            episode_rewards, episode_lengths, stages_completed, arcade_runs_completed, kl_divergences = evaluate_policy_with_arcade_metrics(
                 model=self.model,
                 env=self.eval_env,
+                teachers=configs.load_teachers() if configs.teacher_paths else None,
                 n_eval_episodes=self.n_eval_episodes,
                 render=self.render,
                 deterministic=self.deterministic,
@@ -214,7 +217,7 @@ class ArcadeMetricsEvalCallback(EventCallback):
                 warn=self.warn,
                 callback=self._log_success_callback,
             )
-            ################################################################################################################
+            ################################################################################################################################
 
             if self.log_path is not None:
                 assert isinstance(episode_rewards, list)
@@ -222,11 +225,12 @@ class ArcadeMetricsEvalCallback(EventCallback):
                 self.evaluations_timesteps.append(self.num_timesteps)
                 self.evaluations_results.append(episode_rewards)
                 self.evaluations_length.append(episode_lengths)
-                #####################################################
-                # Log custom metrics                                #
+                #######################################################
+                # Log custom metrics
                 self.stages_comp.append(stages_completed)
                 self.arcade_runs_comp.append(arcade_runs_completed)
-                #####################################################
+                self.student_teacher_divergences.append(kl_divergences)
+                #######################################################
 
                 kwargs = {}
                 # Save success log if present
@@ -242,6 +246,7 @@ class ArcadeMetricsEvalCallback(EventCallback):
                     ##################################
                     stages=self.stages_comp,
                     arcade_runs=self.arcade_runs_comp,
+                    kl_divs=kl_divergences,
                     ##################################
                     **kwargs,  # type: ignore[arg-type]
                 )
@@ -250,27 +255,32 @@ class ArcadeMetricsEvalCallback(EventCallback):
             mean_ep_length, std_ep_length = np.mean(episode_lengths), np.std(episode_lengths)
             self.last_mean_reward = float(mean_reward)
 
-            #################################################################################################
-            # Calculate means and std of arcade metrics                                                     #
+            #########################################################################################################
+            # Calculate means and std of arcade metrics
             mean_stages, std_stages = np.mean(stages_completed), np.std(stages_completed)
             mean_arcade_runs, std_arcade_runs = np.mean(arcade_runs_completed), np.std(arcade_runs_completed)
-            #################################################################################################
+            kl_mean, kl_std = np.mean(np.array(kl_divergences).T, axis=1), np.std(np.array(kl_divergences).T, axis=1)
+            #########################################################################################################
 
             if self.verbose >= 1:
                 print(f"Eval num_timesteps={self.num_timesteps}, " f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
                 print(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
-                #################################################################################
-                # Print arcade metrics if verbose                                               #
+                #######################################################################################
+                # Print arcade metrics if verbose
                 print(f"Stages completed: {mean_stages:.2f} +/- {std_stages:.2f}")
                 print(f"Arcade runs completed: {mean_arcade_runs:.2f} +/- {std_arcade_runs:.2f}")
-                #################################################################################
+                for idx, kl_info in enumerate(zip(kl_mean, kl_std)):
+                    print(f"Divergence with teachers {idx + 1}: {kl_info[0]:.2f} +/- {kl_info[1]:.2f}")
+                #######################################################################################
             # Add to current Logger
             self.logger.record("eval/mean_reward", float(mean_reward))
             self.logger.record("eval/mean_ep_length", mean_ep_length)
             #######################################################################
-            # Log custom metrics                                                  #
+            # Log custom metrics
             self.logger.record("eval/mean_stages_completed", mean_stages)
             self.logger.record("eval/mean_arcade_runs_completed", mean_arcade_runs)
+            for idx, mean in enumerate(kl_mean):
+                self.logger.record(f"divergences/teacher_{idx + 1}", mean)
             #######################################################################
 
             if len(self._is_success_buffer) > 0:
@@ -288,7 +298,7 @@ class ArcadeMetricsEvalCallback(EventCallback):
                     print("New best mean reward!")
                 if self.best_model_save_path is not None:
                     ##############################################################################
-                    # Use self.model_save_name instead of just "best_model"                      #
+                    # Use self.model_save_name instead of just "best_model"
                     self.model.save(os.path.join(self.best_model_save_path, self.model_save_name))
                     ##############################################################################
                 self.best_mean_reward = float(mean_reward)
