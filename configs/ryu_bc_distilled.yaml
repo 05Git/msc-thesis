@@ -1,6 +1,6 @@
 folders:
   parent_dir: distil_policies
-  model_name: bc_distil
+  model_name: ryu_bc_distilled/bc_teachers/rand_selection
 
 misc:
   seed: 0
@@ -8,7 +8,7 @@ misc:
   num_train_envs: 8
   num_eval_envs: 4
   timesteps: 2_000_000
-  model_checkpoint: "0"
+  model_checkpoint: "2000000"
   n_eval_episodes: 100
   distil_policy: True
 
@@ -37,6 +37,7 @@ teachers:
   antiair_teacher: experts/bc_policies/antiair_simple/model/seed_0/trainer/trainer_policy.zip
   jump_in_teacher: experts/bc_policies/jump_ins_simple/model/seed_0/trainer/trainer_policy.zip
   defence_teacher: experts/bc_policies/defence_simple/model/seed_0/trainer/trainer_policy.zip
+  base_model: final_policies/base_agents/ryu_bc/model/seed_0/trainer/trainer_policy.zip
 
 teacher_probabilities: null
 

@@ -1,6 +1,6 @@
 folders:
   parent_dir: distil_policies
-  model_name: bc_distil
+  model_name: ryu_rl_distilled/rl_teachers/rand_selection
 
 misc:
   seed: 0
@@ -34,9 +34,10 @@ policy_settings:
   verbose: 1
 
 teachers:
-  antiair_teacher: experts/bc_policies/antiair_simple/model/seed_0/trainer/trainer_policy.zip
-  jump_in_teacher: experts/bc_policies/jump_ins_simple/model/seed_0/trainer/trainer_policy.zip
-  defence_teacher: experts/bc_policies/defence_simple/model/seed_0/trainer/trainer_policy.zip
+  antiair_teacher: experts/from_scratch/antiair/model/seed_0/500000.zip
+  attack_teacher: experts/from_scratch/attack_rand/model/seed_0/500000.zip
+  defence_teacher: experts/from_scratch/antiair/model/seed_0/500000.zip
+  base_model: final_policies/base_agents/ryu_vanilla/model/seed_0/2000000.zip
 
 teacher_probabilities: null
 

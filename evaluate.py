@@ -1,8 +1,6 @@
 import os
 import json
 import argparse
-import configs
-import torch as th
 import numpy as  np
 import custom_wrappers as cw
 
@@ -11,41 +9,45 @@ from stable_baselines3.common.utils import set_random_seed
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env
 from utils import load_agent, evaluate_policy_with_arcade_metrics, eval_student_teacher_likelihood
 from diambra.arena import SpaceTypes
+from settings import load_settings
 
-# diambra run -s _ python evaluate.py --eval_dir_name _ --policy_path _ --deterministic
+# diambra run -s _ python evaluate.py --cfg _ --eval_dir_name _ --policy_path _ --deterministic
 
-def main(deterministic: bool, dir_name: str, policy_path: str):
+def main(cfg: str, deterministic: bool, dir_name: str, policy_path: str):
+    configs = load_settings(cfg)
+    settings = configs["eval_settings"]
+    wrappers = configs["eval_wrappers"]
     if deterministic:
-        configs.eval_wrappers.wrappers.append([cw.NoOpWrapper, {
-            "action_space_type": "discrete" if configs.eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+        wrappers.wrappers.append([cw.NoOpWrapper, {
+            "action_space_type": "discrete" if settings.eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
             "no_attack": 0,
         }])
 
     eval_env, _ = make_sb3_env(
-        game_id=configs.eval_settings.game_id,
-        env_settings=configs.eval_settings,
-        wrappers_settings=configs.eval_wrappers,
-        seed = configs.misc["seed"]
+        game_id=settings.game_id,
+        env_settings=settings,
+        wrappers_settings=wrappers,
+        seed = configs["misc"]["seed"]
     )
     eval_env = VecTransposeImage(eval_env)
-    set_random_seed(configs.misc["seed"])
+    set_random_seed(settings["misc"]["seed"])
 
-    model_checkpoint = configs.misc["model_checkpoint"]
-    save_path = os.path.join(configs.model_folder, f"seed_{configs.misc['seed']}")
+    model_checkpoint = configs["misc"]["model_checkpoint"]
+    save_path = os.path.join(configs["folders"]["model_folder"], f"seed_{configs['misc']['seed']}")
     checkpoint_path = os.path.join(save_path, model_checkpoint) if not policy_path else policy_path
-    agent = load_agent(env=eval_env, policy_path=checkpoint_path, force_load=True)
+    agent = load_agent(settings_config=configs, env=eval_env, policy_path=checkpoint_path, force_load=True)
 
     reward_infos, episode_lengths, stages_infos, arcade_infos, kl_divs = evaluate_policy_with_arcade_metrics(
         model=agent,
         env=eval_env,
-        teachers=configs.teachers,
-        n_eval_episodes=configs.misc["n_eval_episodes"],
+        teachers=configs["teachers"],
+        n_eval_episodes=configs["misc"]["n_eval_episodes"],
         deterministic=deterministic,
         return_episode_rewards=True,
     )
     eval_results = {
         "model": checkpoint_path,
-        "characters": configs.eval_settings.characters,
+        "characters": settings.characters,
         "rewards_infos": reward_infos,
         "episode_lengths": episode_lengths,
         "stages_infos": stages_infos,
@@ -61,12 +63,12 @@ def main(deterministic: bool, dir_name: str, policy_path: str):
         "std_kl_divs": {id: np.std(kl_div) for id, kl_div in kl_divs.items()},
     }
     
-    if "teacher_input" in configs.wrappers_settings.keys() and configs.wrappers_settings["teacher_input"]:
+    if "eval_teacher_similarity" in configs["misc"].keys() and configs["misc"]["eval_teacher_similarity"]:
         teacher_act_counts, teacher_act_means, teacher_act_stds = eval_student_teacher_likelihood(
             student=agent,
-            num_teachers=len(configs.teachers),
+            num_teachers=len(configs["teachers"]),
             env=eval_env,
-            n_eval_episodes=configs.misc["n_eval_episodes"],
+            n_eval_episodes=configs["misc"]["n_eval_episodes"],
             deterministic=deterministic,
         )
 
@@ -84,7 +86,7 @@ def main(deterministic: bool, dir_name: str, policy_path: str):
         policy_path_parts = policy_path.split(os.sep)
         model_path = os.path.join(*policy_path_parts[:2]) # Assumes relative path instead of absolute path
     else:
-        model_path = os.path.join(configs.folders["parent_dir"], configs.folders["model_name"])
+        model_path = os.path.join(configs["folders"]["parent_dir"], configs["folders"]["model_name"])
     results_save_path = os.path.join(
         base_path,
         model_path,
@@ -99,12 +101,14 @@ def main(deterministic: bool, dir_name: str, policy_path: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg", type=str, required=True, help="Path to settings config")
     parser.add_argument("--eval_dir_name", type=str, required=False, help="Name of evaluations directory", default="evaluation_results")
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Evaluate deterministic or stochastic policy", default=True)
     parser.add_argument("--policy_path", type=str, required=False, help="Path to load pre-trained policy", default=None)
     opt = parser.parse_args()
 
     main(
+        cfg=opt.cfg,
         deterministic=opt.deterministic,
         dir_name=opt.eval_dir_name,
         policy_path=opt.policy_path,

@@ -2,10 +2,10 @@ import numpy as np
 import warnings
 import os
 import gymnasium as gym
-import configs
 
 from stable_baselines3.common.callbacks import BaseCallback, EventCallback
 from stable_baselines3.common.vec_env import VecEnv, sync_envs_normalization
+from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from utils import evaluate_policy_with_arcade_metrics
 from typing import Any, Optional, Union
 
@@ -96,6 +96,7 @@ class ArcadeMetricsEvalCallback(EventCallback):
         callback_on_new_best: Optional[BaseCallback] = None,
         callback_after_eval: Optional[BaseCallback] = None,
         n_eval_episodes: int = 5,
+        teachers: dict[str: OnPolicyAlgorithm] = None,
         eval_freq: int = 10000,
         log_path: Optional[str] = None,
         best_model_save_path: Optional[str] = None,
@@ -119,6 +120,7 @@ class ArcadeMetricsEvalCallback(EventCallback):
         self.deterministic = deterministic
         self.render = render
         self.warn = warn
+        self.teachers = teachers
 
         # Convert to VecEnv for consistency
         if not isinstance(eval_env, VecEnv):
@@ -209,7 +211,7 @@ class ArcadeMetricsEvalCallback(EventCallback):
             episode_rewards, episode_lengths, stages_completed, arcade_runs_completed, kl_divergences = evaluate_policy_with_arcade_metrics(
                 model=self.model,
                 env=self.eval_env,
-                teachers=configs.load_teachers() if configs.teacher_paths else None,
+                teachers=self.teachers,
                 n_eval_episodes=self.n_eval_episodes,
                 render=self.render,
                 deterministic=self.deterministic,

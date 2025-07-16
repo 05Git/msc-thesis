@@ -3,21 +3,22 @@ watch.py: Observe a given policy's behaviour.
 """
 import os
 import argparse
-import configs
 import diambra.arena
 import custom_wrappers as cw
 
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 from diambra.arena import SpaceTypes
 from utils import load_agent
+from settings import load_settings
 
-# diambra run -g python watch.py --policy_path _ --deterministic
+# diambra run -g python watch.py --cfg _ --policy_path _ --deterministic
 
-def main(policy_path: str, deterministic: bool,):
+def main(cfg: str, policy_path: str, deterministic: bool,):
+    configs: dict = load_settings(cfg)
     # step_ratio > 1 will make gameplay too fast to observe normally
-    settings = configs.train_settings
+    settings = configs["train_settings"]
     settings.step_ratio = 1
-    wrappers = configs.train_wrappers
+    wrappers = configs["train_wrappers"]
     if deterministic:
         wrappers.wrappers.append([cw.NoOpWrapper, {
             "action_space_type": "discrete" if settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
@@ -32,10 +33,10 @@ def main(policy_path: str, deterministic: bool,):
     # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
     env = VecTransposeImage(DummyVecEnv([lambda: env]))
     
-    model_checkpoint = configs.misc["model_checkpoint"]
-    load_path = os.path.join(configs.model_folder, f"seed_{configs.misc['seed']}")
+    model_checkpoint = configs["misc"]["model_checkpoint"]
+    load_path = os.path.join(configs["folders"]["model_folder"], f"seed_{configs['misc']['seed']}")
     checkpoint_path = os.path.join(load_path, model_checkpoint) if not policy_path else policy_path
-    agent = load_agent(env=env, policy_path=checkpoint_path, force_load=True)
+    agent = load_agent(settings_config=configs, env=env, policy_path=checkpoint_path, force_load=True)
 
     obs = env.reset()
     while True:
@@ -60,8 +61,9 @@ def main(policy_path: str, deterministic: bool,):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg", type=str, required=True, help="Path to settings config")
     parser.add_argument("--policy_path", type=str, required=False, help="Path to load pre-trained policy", default=None)
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Whether to follow a deterministic or stochastic policy", default=True)
     opt = parser.parse_args()
 
-    main(policy_path=opt.policy_path, deterministic=opt.deterministic)
+    main(cfg=opt.cfg, policy_path=opt.policy_path, deterministic=opt.deterministic)

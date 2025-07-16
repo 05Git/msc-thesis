@@ -5,18 +5,14 @@ import os
 import argparse
 import numpy as np
 import cv2
-import configs
-import tempfile
-import torch as th
-import torch.nn as nn
 import json
 import custom_wrappers as cw
-import gymnasium.spaces as spaces
 
 from diambra.arena import SpaceTypes
 from diambra.arena.utils.diambra_data_loader import DiambraDataLoader
 from stable_baselines3.common.vec_env import VecTransposeImage
 from utils import load_agent, evaluate_policy_with_arcade_metrics, train_eval_split
+from settings import load_settings
 
 from imitation.data.types import TrajectoryWithRew
 from imitation.algorithms import bc
@@ -25,7 +21,7 @@ from imitation.rewards.reward_nets import CnnRewardNet
 from imitation.data import rollout
 from imitation.util import logger as imit_logger
 
-# diambra run -s _ python imitation.py --dataset_path _ --train_id _ --agent_num _ --policy_path _ --deterministic --num_players _ 
+# diambra run -s _ python imitation.py --cfg _ --dataset_path _ --train_id _ --agent_num _ --policy_path _ --deterministic --num_players _ 
 
 def get_transitions(data_loader: DiambraDataLoader, agent_num: int = None):
     """
@@ -73,6 +69,7 @@ def get_transitions(data_loader: DiambraDataLoader, agent_num: int = None):
 
 
 def main(
+    cfg: str,
     dataset_path_input: str,
     agent_num: int,
     policy_path: str,
@@ -84,6 +81,8 @@ def main(
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))
         dataset_path = os.path.join(base_path, "dataset")
+    
+    configs = load_settings(cfg)
 
     # Set up imitation transitions
     imitation_data_loader = DiambraDataLoader(dataset_path)
@@ -96,31 +95,31 @@ def main(
         # which is the same as the previous frame's to 0, which stops the env interpreting that attack button as held down and allows the
         # policy to send out another attack. This is particularly important for deterministic policies, as they often converge to relying
         # on one or two attacks no matter the situation, and are particularly prone to this button hold "bug".
-        configs.eval_wrappers.wrappers.append([cw.NoOpWrapper, {
-            "action_space_type": "discrete" if configs.eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+        configs["eval_wrappers"].wrappers.append([cw.NoOpWrapper, {
+            "action_space_type": "discrete" if configs["eval_settings"].action_space == SpaceTypes.DISCRETE else "multi_discrete",
             "no_attack": 0,
         }])
         
     train_env, eval_env = train_eval_split(
-        game_id=configs.general_settings["game_id"],
-        num_train_envs=configs.misc["num_train_envs"],
-        num_eval_envs=configs.misc["num_eval_envs"],
-        train_settings=configs.train_settings,
-        eval_settings=configs.eval_settings,
-        train_wrappers=configs.train_wrappers,
-        eval_wrappers=configs.eval_wrappers,
-        seed=configs.misc["seed"]
+        game_id=configs["train_settings"].game_id,
+        num_train_envs=configs["misc"]["num_train_envs"],
+        num_eval_envs=configs["misc"]["num_eval_envs"],
+        train_settings=configs["train_settings"],
+        eval_settings=configs["eval_settings"],
+        train_wrappers=configs["train_wrappers"],
+        eval_wrappers=configs["eval_wrappers"],
+        seed=configs["misc"]["seed"]
     )
     # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
     train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
 
-    model_checkpoint = configs.misc["model_checkpoint"]
-    save_path = os.path.join(configs.model_folder, f"seed_{configs.misc['seed']}")
+    model_checkpoint = configs["misc"]["model_checkpoint"]
+    save_path = os.path.join(configs["folders"]["model_folder"], f"seed_{configs['misc']['seed']}")
     checkpoint_path = os.path.join(save_path, model_checkpoint) if not policy_path else policy_path
-    agent = load_agent(env=train_env, policy_path=checkpoint_path)
+    agent = load_agent(settings_config=configs, env=train_env, policy_path=checkpoint_path)
 
     # Set new imitation logger
-    imit_log = imit_logger.configure(configs.tensor_board_folder, ["stdout", "tensorboard"])
+    imit_log = imit_logger.configure(configs["folders"]["tensor_board_folder"], ["stdout", "tensorboard"])
 
     # Train behavioural clone trainer on transitions
     bc_trainer = bc.BC(
@@ -172,19 +171,19 @@ def main(
 
     # Imitation training
     try:
-        if configs.imitation_settings["type"] == "imitate":
+        if configs["imitation_settings"]["type"] == "bc":
             trainer = bc_trainer
-            trainer.train(n_epochs=configs.imitation_settings["bc"]["n_epochs"])
-        elif configs.imitation_settings["type"] == "adv":
+            trainer.train(n_epochs=configs["imitation_settings"]["n_epochs"])
+        elif configs["imitation_settings"]["type"] == "gail":
             trainer = gail_trainer
-            trainer.train(configs.imitation_settings["gail"]["n_steps"], callback=None)
+            trainer.train(configs["imitation_settings"]["n_steps"], callback=None)
         else:
-            raise ValueError(f"Expected imitation type to be 'imitate' or 'adv', received {configs.imitation_settings['type']} instead.")
+            raise ValueError(f"Expected imitation type to be 'imitate' or 'adv', received {configs['imitation_settings']['type']} instead.")
     except KeyboardInterrupt:
         print("Ending imitation learning early, saving model")
 
     # Save imitated policy
-    imitation_folder = os.path.join(configs.model_folder, f"seed_{configs.misc['seed']}", "trainer")
+    imitation_folder = os.path.join(configs["folder"]["model_folder"], f"seed_{configs['misc']['seed']}", "trainer")
     agent.policy = trainer.policy
     agent.save(os.path.join(imitation_folder, "trainer_policy"))
 
@@ -214,12 +213,12 @@ def main(
         policy_path_parts = policy_path.split(os.sep)
         model_path = os.path.join(*policy_path_parts[:2])
     else:
-        model_path = os.path.join(configs.folders["parent_dir"], configs.folders["model_name"])
+        model_path = os.path.join(configs["folders"]["parent_dir"], configs["folders"]["model_name"])
     file_path = os.path.join(
         base_path,
         model_path,
         "model",
-        f"seed_{configs.misc['seed']}",
+        f"seed_{configs['misc']['seed']}",
         "trainer",
         "imitation_learning_results.json"
     )
@@ -230,6 +229,7 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg", type=str, required=True, help="Path to settings config")
     parser.add_argument("--dataset_path", type=str, required=True, help="Path to imitation trajectories")
     parser.add_argument("--policy_path", type=str, required=False, help="Path to load pre-trained policy", default=None)
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, required=False, help="Whether to follow a deterministic or stochastic policy", default=True)
@@ -238,6 +238,7 @@ if __name__ == "__main__":
     opt = parser.parse_args()
 
     main(
+        cfg=opt.cfg,
         dataset_path_input=opt.dataset_path,    # Path to episode recordings
         agent_num=opt.agent_num,                # Agent number to retrieve actions from (if recordings are of 2p env)
         policy_path=opt.policy_path,            # Path to specific policy 

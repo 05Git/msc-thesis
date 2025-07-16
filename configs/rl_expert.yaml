@@ -1,16 +1,15 @@
 folders:
-  parent_dir: distil_policies
-  model_name: bc_distil
+  parent_dir: experts/rl_policies
+  model_name: attack_rand
 
 misc:
   seed: 0
-  num_players: 1
+  num_players: 2
   num_train_envs: 8
   num_eval_envs: 4
-  timesteps: 2_000_000
+  timesteps: 500_000
   model_checkpoint: "0"
   n_eval_episodes: 100
-  distil_policy: True
 
 policy_settings:
   policy: CnnPolicy
@@ -33,17 +32,10 @@ policy_settings:
   stats_window_size: 100
   verbose: 1
 
-teachers:
-  antiair_teacher: experts/bc_policies/antiair_simple/model/seed_0/trainer/trainer_policy.zip
-  jump_in_teacher: experts/bc_policies/jump_ins_simple/model/seed_0/trainer/trainer_policy.zip
-  defence_teacher: experts/bc_policies/defence_simple/model/seed_0/trainer/trainer_policy.zip
-
-teacher_probabilities: null
-
 callbacks_settings:
   autosave: True
   check_freq: 500_000
-  arcade_metrics: True
+  arcade_metrics: True  
 
 env_settings:
   shared:
@@ -52,16 +44,24 @@ env_settings:
     frame_shape: !!python/tuple [84, 84, 1]
     continue_game: 0.
     action_space: multi_discrete
-    outfits: 1
+    outfits: !!python/tuple [1, 1]
     splash_screen: False
   train:
-    characters: Ryu
+    characters: !!python/tuple [Ryu, null]
     difficulty: 6
-    super_art: 1
+    super_art: !!python/tuple [1, 1]
   eval:
-    characters: Ryu
+    characters: [
+      !!python/tuple [Ryu, Hugo],
+      !!python/tuple [Ryu, Alex],
+      !!python/tuple [Ryu, Q],
+      !!python/tuple [Ryu, Gouki],
+      !!python/tuple [Ryu, Ibuki],
+      !!python/tuple [Ryu, Makoto],
+      !!python/tuple [Ryu, Chun-li],
+    ]
     difficulty: 6
-    super_art: 1
+    super_art: !!python/tuple [1, 1]
 
 wrappers_settings:
   normalize_reward: True
@@ -75,8 +75,13 @@ wrappers_settings:
   scale: False
   exclude_image_scaling: False
   role_relative: False
-  filter_keys: [frame]
+  filter_keys: [frame,P1_health,P2_health,timer]
   flatten: True
   wrappers: [
+    [opp_controller, {
+      opp_type: rand,
+    }],
     [pixelobs, {}],
+    [att_train, {}],
+    [2ptrain, {}],
   ]

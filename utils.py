@@ -8,9 +8,9 @@ import numpy as np
 import gymnasium as gym
 import torch as th
 import diambra.arena
-import configs
 
 from stable_baselines3 import PPO
+from RND import RNDPPO
 from distillation_models import StudentDistilSolver
 from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings
 from stable_baselines3.common.monitor import Monitor
@@ -21,7 +21,7 @@ from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Any, Callable, Optional, Union
 
 
-def load_agent(env: gym.Env, policy_path: str, force_load: bool = False):
+def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load: bool = False):
     """
     Load a PPO, RNDPPO, or DistilSolver agent.
 
@@ -30,21 +30,27 @@ def load_agent(env: gym.Env, policy_path: str, force_load: bool = False):
     :param force_load: If False and the given checkpoint is invalid, a new policy will be created.
     Otherwise, this will return an error.
     """
+    policy_settings: dict = settings_config["policy_settings"]
+    agent_type: PPO | RNDPPO = settings_config["agent_type"]
+    teachers: dict[str: OnPolicyAlgorithm] = settings_config["teachers"]
+    teacher_probabilities: list[float] = settings_config["teacher_probabilities"]
+    misc: dict = settings_config["misc"]
+
     if policy_path[-4:] != ".zip":
         policy_path = policy_path + ".zip"
     
     if os.path.isfile(policy_path):
         print("\nCheckpoint found, loading policy.")
-        agent = configs.agent_type.load(
+        agent = agent_type.load(
             path=policy_path,
             env=env,
             # custom_objects={
             #     "observation_space": env.observation_space
             # },
-            **configs.policy_settings
+            **policy_settings
         )
     elif not force_load:
-        agent = configs.agent_type(env=env, **configs.policy_settings)
+        agent = agent_type(env=env, **policy_settings)
     else:
         raise Exception("\nInvalid checkpoint, please check policy path provided.")
     
@@ -52,11 +58,11 @@ def load_agent(env: gym.Env, policy_path: str, force_load: bool = False):
     print("Policy architecture:")
     print(agent.policy)
 
-    if configs.teachers and configs.misc["distil_policy"]:
+    if teachers and misc["distil_policy"]:
         solver = StudentDistilSolver(
             student=agent,
-            teachers=configs.teachers,
-            probabilities=configs.teacher_probabilities
+            teachers=teachers,
+            probabilities=teacher_probabilities
         )
         return solver
     

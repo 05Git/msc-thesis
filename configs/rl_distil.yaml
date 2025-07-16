@@ -40,7 +40,7 @@ teachers:
 
 teacher_probabilities: null
 
-callbacks:
+callbacks_settings_settings:
   autosave: True
   check_freq: 500_000
   arcade_metrics: True
@@ -49,7 +49,7 @@ env_settings:
   shared:
     game_id: sfiii3n
     step_ratio: 6
-    frame_shape: [84, 84, 1]
+    frame_shape: !!python/tuple [84, 84, 1]
     continue_game: 0.
     action_space: multi_discrete
     outfits: 1
