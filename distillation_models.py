@@ -4,13 +4,14 @@ import numpy as np
 
 from torch.nn import functional as F
 from sb3_distill.core import PolicyDistillationAlgorithm
+from typing import Optional, NamedTuple
 
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
-from stable_baselines3.common.vec_env import VecEnv
+from stable_baselines3.common.vec_env import VecEnv, VecNormalize
 from stable_baselines3.common.buffers import RolloutBuffer
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common import distributions
-from stable_baselines3.common.type_aliases import MaybeCallback
+from stable_baselines3.common.type_aliases import MaybeCallback, RolloutBufferSamples
 from stable_baselines3.common.utils import explained_variance, obs_as_tensor
 
 
@@ -145,6 +146,102 @@ class StudentDistilSolver(PolicyDistillationAlgorithm, OnPolicyAlgorithm):
         excluded = super()._excluded_save_params()
         return excluded + ["teachers"] + ["student"]
 
+
+class TeacherLogitsRolloutBuffer(RolloutBuffer):
+
+    observations: np.ndarray
+    actions: np.ndarray
+    rewards: np.ndarray
+    advantages: np.ndarray
+    returns: np.ndarray
+    episode_starts: np.ndarray
+    log_probs: np.ndarray
+    values: np.ndarray
+    teacher_logits: np.ndarray
+    teacher_values: np.ndarray
+
+    def __init__(
+        self, buffer_size, observation_space, action_space,
+        device = "auto", gae_lambda = 1, gamma = 0.99, n_envs = 1
+    ):
+        super().__init__(
+            buffer_size, observation_space, action_space,
+            device, gae_lambda, gamma, n_envs
+        )
+        self.teacher_logits = np.zeros((self.buffer_size, self.n_envs, sum(self.action_space.nvec)), dtype=np.float32)
+        self.teacher_values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+    
+    def reset(self) -> None:
+        self.teacher_logits = np.zeros((self.buffer_size, self.n_envs, sum(self.action_space.nvec)), dtype=np.float32)
+        self.teacher_values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        return super().reset()
+    
+    def add(
+        self, obs, action, reward, episode_start, value, log_prob,
+        teacher_logits, teacher_values
+    ):
+        self.teacher_logits[self.pos] = np.array(teacher_logits)
+        self.teacher_values[self.pos] = np.array(teacher_values)
+        return super().add(obs, action, reward, episode_start, value, log_prob)
+    
+    def get(self, batch_size: Optional[int] = None):
+        assert self.full, ""
+        indices = np.random.permutation(self.buffer_size * self.n_envs)
+        # Prepare the data
+        if not self.generator_ready:
+            _tensor_names = [
+                "observations",
+                "actions",
+                "values",
+                "log_probs",
+                "advantages",
+                "returns",
+                "teacher_logits",
+                "teacher_values"
+            ]
+
+            for tensor in _tensor_names:
+                self.__dict__[tensor] = self.swap_and_flatten(self.__dict__[tensor])
+            self.generator_ready = True
+
+        # Return everything, don't create minibatches
+        if batch_size is None:
+            batch_size = self.buffer_size * self.n_envs
+
+        start_idx = 0
+        while start_idx < self.buffer_size * self.n_envs:
+            yield self._get_samples(indices[start_idx : start_idx + batch_size])
+            start_idx += batch_size
+    
+    def _get_samples(
+        self,
+        batch_inds: np.ndarray,
+        env: Optional[VecNormalize] = None,
+    ) -> RolloutBufferSamples:
+        data = (
+            self.observations[batch_inds],
+            self.actions[batch_inds],
+            self.values[batch_inds].flatten(),
+            self.log_probs[batch_inds].flatten(),
+            self.advantages[batch_inds].flatten(),
+            self.returns[batch_inds].flatten(),
+            self.teacher_logits[batch_inds],
+            self.teacher_values[batch_inds].flatten()
+        )
+        return MultiTeacherRolloutSamples(*tuple(map(self.to_torch, data)))
+
+
+class MultiTeacherRolloutSamples(NamedTuple):
+    observations: th.Tensor
+    actions: th.Tensor
+    old_values: th.Tensor
+    old_log_prob: th.Tensor
+    advantages: th.Tensor
+    returns: th.Tensor
+    teacher_logits: th.Tensor
+    teacher_values: th.Tensor
+
+
 class MultiTeacherSolver(OnPolicyAlgorithm):
     def __init__(
         self,
@@ -155,7 +252,7 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
             policy=type(student.policy), env=student.env, learning_rate=student.learning_rate, n_steps=student.n_steps,
             gamma=student.gamma, gae_lambda=student.gae_lambda, ent_coef=student.ent_coef, 
             vf_coef=student.vf_coef, max_grad_norm=student.max_grad_norm, use_sde=student.use_sde,
-            sde_sample_freq=student.sde_sample_freq, rollout_buffer_class=student.rollout_buffer_class, 
+            sde_sample_freq=student.sde_sample_freq, rollout_buffer_class=TeacherLogitsRolloutBuffer, 
             rollout_buffer_kwargs=student.rollout_buffer_kwargs, stats_window_size=student._stats_window_size,
             tensorboard_log=student.tensorboard_log, policy_kwargs=student.policy_kwargs,
             verbose=student.verbose, seed=student.seed, device=student.device,
@@ -163,8 +260,6 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
         self.student = student      # Setting a separate student model allows non-distillation models to be finetuned via distillation
         self.teachers = teachers    # List of teacher policies
         self.policy = student.policy
-        self.teacher_logits = {idx: [] for idx in range(self.student.env.action_space.shape[0])}
-        self.teacher_values = []
 
     def save(self, path, exclude = None, include = None):
         self.policy = self.student.policy
@@ -193,6 +288,9 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
 
         callback.on_rollout_start()
 
+        ######
+        teacher_selection_rates = np.zeros((len(self.teachers), 1))
+        ######
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
                 # Sample a new noise matrix
@@ -214,14 +312,18 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
                     logits = []
                     for category in dist.distribution:
                         logits.append(category.logits)
+                    logits = th.cat(logits, dim=1)
                     teacher_logits.append(logits)
                 teacher_values = th.stack(teacher_values)
-                max_values = th.max(teacher_values, dim=0).values
-                self.teacher_values.append(max_values)
-                best_teacher_indices = th.argmax(teacher_values, dim=0)
-                for action_category in range(self.student.env.action_space.shape[0]):
-                    for idx, teacher_idx in enumerate(best_teacher_indices):
-                        self.teacher_logits[action_category].append(teacher_logits[teacher_idx][action_category][idx])
+                max_returns = th.max(teacher_values, dim=0)
+                max_teacher_values = max_returns.values
+                max_teacher_values = max_teacher_values.cpu().numpy()
+                best_teacher_indices = max_returns.indices
+                best_teacher_logits = th.zeros((self.n_envs, sum(self.action_space.nvec)))
+                for idx, t_idx in enumerate(best_teacher_indices):
+                    best_teacher_logits[idx] = teacher_logits[t_idx][idx]
+                for idx, t_id in enumerate(self.teachers.keys()):
+                    teacher_selection_rates[idx][0] += th.sum(th.where(best_teacher_indices == idx, 1, 0)).cpu().numpy()
                 ##########
 
             actions = actions.cpu().numpy()
@@ -275,6 +377,8 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
                 self._last_episode_starts,  # type: ignore[arg-type]
                 values,
                 log_probs,
+                best_teacher_logits,
+                max_teacher_values
             )
             self._last_obs = new_obs  # type: ignore[assignment]
             self._last_episode_starts = dones
@@ -288,6 +392,12 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
         callback.update_locals(locals())
 
         callback.on_rollout_end()
+
+        ####
+        teacher_selection_rates /= n_rollout_steps * self.n_envs
+        for idx, t_id in enumerate(self.teachers.keys()):
+            self.logger.record(f"teachers/{t_id}_selection_rate", teacher_selection_rates[idx][0])
+        ####
 
         return True
     
@@ -318,10 +428,8 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
                 entropy_loss = -th.mean(entropy)
 
             # Distillation-loss
-            teacher_act_logits = [th.stack(self.teacher_logits[i]) for i in self.teacher_logits.keys()]
-            teacher_act_logits = th.cat(teacher_act_logits, dim=1)
-            teacher_act_distribution = distributions.MultiCategoricalDistribution(action_dims=self.student.env.action_space.nvec)
-            teacher_act_distribution.proba_distribution(action_logits=teacher_act_logits)
+            teacher_act_distribution = distributions.MultiCategoricalDistribution(action_dims=self.env.action_space.nvec)
+            teacher_act_distribution.proba_distribution(action_logits=rollout_data.teacher_logits)
             student_act_distribution = self.student.policy.get_distribution(rollout_data.observations)
 
             # Forward/reverse KL
@@ -335,7 +443,7 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
 
             # distill both policy and value function from the teacher
             distillation_loss = th.mean(kl_divergence)
-            value_loss = F.mse_loss(th.squeeze(th.cat(self.teacher_values)), values)
+            value_loss = F.mse_loss(th.squeeze(rollout_data.teacher_values), values)
 
             loss = distillation_loss + self.vf_coef * value_loss + self.ent_coef * entropy_loss
 
@@ -357,10 +465,6 @@ class MultiTeacherSolver(OnPolicyAlgorithm):
         self.logger.record("train/loss", loss.item())
         if hasattr(self.student.policy, "log_std"):
             self.logger.record("train/std", th.exp(self.student.policy.log_std).mean().item())
-        
-        self.teacher_values.clear()
-        for t_id in self.teacher_logits.keys():
-            self.teacher_logits[t_id].clear()
 
     def learn(
         self,
