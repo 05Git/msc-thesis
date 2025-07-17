@@ -11,7 +11,7 @@ import diambra.arena
 
 from stable_baselines3 import PPO
 from RND import RNDPPO
-from distillation_models import StudentDistilSolver
+from distillation_models import StudentDistilSolver, MultiTeacherSolver
 from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import VecEnv, DummyVecEnv, SubprocVecEnv, VecMonitor, is_vecenv_wrapped
@@ -59,10 +59,14 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
     print(agent.policy)
 
     if teachers and misc["distil_policy"]:
-        solver = StudentDistilSolver(
+        # solver = StudentDistilSolver(
+        #     student=agent,
+        #     teachers=teachers,
+        #     probabilities=teacher_probabilities
+        # )
+        solver = MultiTeacherSolver(
             student=agent,
             teachers=teachers,
-            probabilities=teacher_probabilities
         )
         return solver
     

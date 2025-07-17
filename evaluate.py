@@ -19,7 +19,7 @@ def main(cfg: str, deterministic: bool, dir_name: str, policy_path: str):
     wrappers = configs["eval_wrappers"]
     if deterministic:
         wrappers.wrappers.append([cw.NoOpWrapper, {
-            "action_space_type": "discrete" if settings.eval_settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
+            "action_space_type": "discrete" if settings.action_space == SpaceTypes.DISCRETE else "multi_discrete",
             "no_attack": 0,
         }])
 
@@ -30,7 +30,7 @@ def main(cfg: str, deterministic: bool, dir_name: str, policy_path: str):
         seed = configs["misc"]["seed"]
     )
     eval_env = VecTransposeImage(eval_env)
-    set_random_seed(settings["misc"]["seed"])
+    set_random_seed(configs["misc"]["seed"])
 
     model_checkpoint = configs["misc"]["model_checkpoint"]
     save_path = os.path.join(configs["folders"]["model_folder"], f"seed_{configs['misc']['seed']}")

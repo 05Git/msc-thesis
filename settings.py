@@ -1,5 +1,5 @@
 """
-settings.py: _.
+settings.py: Load training and experiment settings from yaml configs.
 """
 import os
 import yaml
@@ -23,6 +23,7 @@ game_ids = [
 device = th.device("cuda" if th.cuda.is_available() else "cpu")
 
 def load_settings(cfg: str) -> dict:
+    print("Loading settings config...")
     # Dictionary of settings configs
     configs = {}
 
@@ -56,6 +57,8 @@ def load_settings(cfg: str) -> dict:
     os.makedirs(tensor_board_folder, exist_ok=True)
 
     configs.update({"folders": {
+        "parent_dir": folders["parent_dir"],
+        "model_name": folders["model_name"],
         "model_folder": model_folder,
         "tensor_board_folder": tensor_board_folder
     }})
