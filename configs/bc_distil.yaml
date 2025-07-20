@@ -1,6 +1,6 @@
 folders:
   parent_dir: distil_policies
-  model_name: bc_distil
+  model_name: bc_distil/value_function
 
 misc:
   seed: 0

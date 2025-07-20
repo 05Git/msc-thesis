@@ -1,16 +1,35 @@
 folders:
-  parent_dir: distil_policies
-  model_name: rl_distil/min_ent
+  parent_dir: fusion_policies
+  model_name: test
 
 misc:
   seed: 0
   num_players: 1
   num_train_envs: 8
   num_eval_envs: 4
-  timesteps: 2_000_000
+  timesteps: 3000
   model_checkpoint: "0"
-  n_eval_episodes: 100
-  distil_policy: True
+  n_eval_episodes: 1
+
+fusion_settings:
+  use_expert_extractors: False
+  predict_expert_values: True
+  expert_selection_method: random
+
+distil_settings:
+  distil_type: student
+  policy_settings:
+    policy: CnnPolicy
+    gamma: 0.99
+    learning_rate: [2.5e-5, 2.5e-6]
+    n_steps: 128
+    gae_lambda: 0.95
+    ent_coef: 0.
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+    use_sde: False
+    sde_sample_freq: -1
+    verbose: 1
 
 policy_settings:
   policy: CnnPolicy
@@ -55,11 +74,11 @@ env_settings:
     outfits: 1
     splash_screen: False
   train:
-    characters: Ryu
+    characters: "Ryu"
     difficulty: 6
     super_art: 1
   eval:
-    characters: Ryu
+    characters: "Ryu"
     difficulty: 6
     super_art: 1
 
@@ -78,5 +97,5 @@ wrappers_settings:
   filter_keys: [frame]
   flatten: True
   wrappers: [
-    [pixelobs, {}],
+    [pixelobs, {}]
   ]

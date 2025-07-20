@@ -91,6 +91,7 @@ def main(cfg: str, deterministic: bool, dir_name: str, policy_path: str):
         base_path,
         model_path,
         "evaluations",
+        f"seed_{configs['misc']['seed']}",
         dir_name,
     )
     os.makedirs(results_save_path, exist_ok=True)

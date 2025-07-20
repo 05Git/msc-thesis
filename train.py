@@ -9,7 +9,9 @@ import custom_callbacks as cc
 from utils import train_eval_split, load_agent
 from stable_baselines3.common.vec_env import VecTransposeImage
 from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, CallbackList
+from stable_baselines3.common.utils import set_random_seed
 from diambra.arena.stable_baselines3.sb3_utils import AutoSave
+from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env
 from diambra.arena import SpaceTypes
 from settings import load_settings
 
@@ -29,18 +31,27 @@ def main(cfg: str, policy_path: str, deterministic: bool):
             "no_attack": 0,
         }])
     
-    train_env, eval_env = train_eval_split(
+    # train_env, eval_env = train_eval_split(
+    #     game_id=configs["train_settings"].game_id,
+    #     num_train_envs=configs["misc"]["num_train_envs"],
+    #     num_eval_envs=configs["misc"]["num_eval_envs"],
+    #     train_settings=configs["train_settings"],
+    #     eval_settings=configs["eval_settings"],
+    #     train_wrappers=configs["train_wrappers"],
+    #     eval_wrappers=configs["eval_wrappers"],
+    #     seed=configs["misc"]["seed"]
+    # )
+    # # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
+    # train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
+
+    train_env, num_envs = make_sb3_env(
         game_id=configs["train_settings"].game_id,
-        num_train_envs=configs["misc"]["num_train_envs"],
-        num_eval_envs=configs["misc"]["num_eval_envs"],
-        train_settings=configs["train_settings"],
-        eval_settings=configs["eval_settings"],
-        train_wrappers=configs["train_wrappers"],
-        eval_wrappers=configs["eval_wrappers"],
+        env_settings=configs["train_settings"],
+        wrappers_settings=configs["train_wrappers"],
         seed=configs["misc"]["seed"]
     )
-    # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
-    train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
+    train_env = VecTransposeImage(train_env)
+    set_random_seed(configs["misc"]["seed"])
     
     # Load a policy
     model_checkpoint = configs["misc"]["model_checkpoint"]
@@ -54,7 +65,7 @@ def main(cfg: str, policy_path: str, deterministic: bool):
     if "autosave" in callbacks_config.keys() and callbacks_config["autosave"]:
         auto_save_callback = AutoSave(
             check_freq=callbacks_config["check_freq"],
-            num_envs=configs["misc"]["num_train_envs"],
+            num_envs=num_envs,
             save_path=save_path,
             filename_prefix=model_checkpoint + "_"
         )
@@ -69,10 +80,10 @@ def main(cfg: str, policy_path: str, deterministic: bool):
         else:
             after_eval = None
         eval_callback = cc.ArcadeMetricsEvalCallback(
-            eval_env=eval_env,
+            eval_env=train_env,
             n_eval_episodes=callbacks_config["n_eval_episodes"],
             teachers=configs["teachers"],
-            eval_freq=max(callbacks_config["eval_freq"] // configs["misc"]["num_train_envs"], 1),
+            eval_freq=max(callbacks_config["eval_freq"] // num_envs, 1),
             log_path=save_path,
             best_model_save_path=save_path,
             deterministic=True,
@@ -95,9 +106,11 @@ def main(cfg: str, policy_path: str, deterministic: bool):
             callback=callback_list,
             reset_num_timesteps=True,
             progress_bar=True,
+            log_interval=1,
         )
     except KeyboardInterrupt:
         print("Training interrupted. Saving model before exiting.")
+
 
     # Save the agent
     model_checkpoint = str(int(model_checkpoint) + configs["misc"]["timesteps"])
@@ -105,7 +118,7 @@ def main(cfg: str, policy_path: str, deterministic: bool):
     agent.save(model_path)
 
     train_env.close()
-    eval_env.close()
+    # eval_env.close()
 
     return 0
 

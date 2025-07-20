@@ -11,7 +11,7 @@ import diambra.arena
 
 from stable_baselines3 import PPO
 from RND import RNDPPO
-from distillation_models import StudentDistilSolver, MultiTeacherSolver
+from sb3_distill import StudentDistill, TeacherDistill, ProximalPolicyDistillation
 from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettings
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import VecEnv, DummyVecEnv, SubprocVecEnv, VecMonitor, is_vecenv_wrapped
@@ -32,43 +32,44 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
     """
     policy_settings: dict = settings_config["policy_settings"]
     agent_type: PPO | RNDPPO = settings_config["agent_type"]
-    teachers: dict[str: OnPolicyAlgorithm] = settings_config["teachers"]
-    teacher_probabilities: list[float] = settings_config["teacher_probabilities"]
-    misc: dict = settings_config["misc"]
 
     if policy_path[-4:] != ".zip":
         policy_path = policy_path + ".zip"
     
     if os.path.isfile(policy_path):
         print("\nCheckpoint found, loading policy.")
-        agent = agent_type.load(
-            path=policy_path,
-            env=env,
-            # custom_objects={
-            #     "observation_space": env.observation_space
-            # },
-            **policy_settings
-        )
+        agent = agent_type.load(path=policy_path, env=env, **policy_settings)
     elif not force_load:
+        print("\nInvalid or no checkpoint given, creating new policy.")
         agent = agent_type(env=env, **policy_settings)
     else:
         raise Exception("\nInvalid checkpoint, please check policy path provided.")
+        
     
     # Print policy network architecture
     print("Policy architecture:")
     print(agent.policy)
 
-    if teachers and misc["distil_policy"]:
-        # solver = StudentDistilSolver(
-        #     student=agent,
-        #     teachers=teachers,
-        #     probabilities=teacher_probabilities
-        # )
-        solver = MultiTeacherSolver(
-            student=agent,
-            teachers=teachers,
-        )
-        return solver
+    if "fusion_settings" in settings_config.keys():
+        fusion_settings = settings_config["fusion_settings"]
+        agent.policy.set_experts(fusion_settings["experts"])
+        agent.policy.set_expert_params(**fusion_settings["expert_params"])
+
+    if "distil_settings" in settings_config.keys():
+        distil_type = settings_config["distil_settings"]["distil_type"]
+        if distil_type == "student":
+            student_type = StudentDistill
+        elif distil_type == "teacher":
+            student_type = TeacherDistill
+        elif distil_type == "ppd":
+            student_type = ProximalPolicyDistillation
+        else:
+            raise ValueError(f"""Invalid student type ({distil_type}). Please select from:
+                             'student', 'teacher', 'ppd'.""")
+        student_policy_settings = settings_config["distil_settings"]["policy_settings"]
+        student = student_type(env=env, **student_policy_settings)
+        student.set_teacher(agent)
+        return student
     
     return agent
 

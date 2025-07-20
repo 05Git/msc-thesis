@@ -10,32 +10,25 @@ from typing import Optional, Union
 from collections import OrderedDict
 
 
-class ForceJumpWrapper(gym.ActionWrapper):
-    def __init__(self, env: gym.Env):
+class JumpBonus(gym.Wrapper):
+    """
+    Add a small bonus for jumping.
+    Requires multi_discrete action space.
+    """
+    def __init__(self, env: gym.Env, jump_bonus: float = 1e-4):
         super().__init__(env)
-        self.jump_timer = 6
+        self.jump_bonus = jump_bonus
     
-    def action(self, action):
-        self.jump_timer = (self.jump_timer - 1) if self.jump_timer > 0 else 50
-        if self.jump_timer < 6:
-            if side == "left":
-                new_move = 4
-            else:
-                new_move = 2
+    def step(self, action):
+        step_result = self.env.step(action)
+        if len(step_result) == 4:
+            obs, reward, terminated, info = step_result
+            truncated = False
         else:
-            new_move = ...
-
-        if type(action) == OrderedDict:
-            asp = self.env.action_space["agent_0"]
-        else:
-            asp = self.env.action_space
-
-        if type(asp) == gym.spaces.MultiDiscrete:
-            new_action = [new_move, ...]
-        else:
-            new_action = new_move
-
-        return ...
+            obs, reward, terminated, truncated, info = step_result
+        if action[1] in [2,3,4]:
+            reward += self.jump_bonus
+        return obs, reward, terminated, truncated, info
     
 
 class TwoPTrainWrapper(gym.ActionWrapper):

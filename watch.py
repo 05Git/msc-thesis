@@ -13,7 +13,7 @@ from settings import load_settings
 
 # diambra run -g python watch.py --cfg _ --policy_path _ --deterministic
 
-def main(cfg: str, policy_path: str, deterministic: bool,):
+def main(cfg: str, policy_path: str, deterministic: bool):
     configs: dict = load_settings(cfg)
     # step_ratio > 1 will make gameplay too fast to observe normally
     settings = configs["train_settings"]

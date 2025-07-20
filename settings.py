@@ -8,6 +8,7 @@ import custom_wrappers as cw
 
 from stable_baselines3 import PPO
 from RND import RNDPPO
+from distillation_models import MultiExpertFusionPolicy
 from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings, SpaceTypes, load_settings_flat_dict
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
 
@@ -63,6 +64,18 @@ def load_settings(cfg: str) -> dict:
         "tensor_board_folder": tensor_board_folder
     }})
 
+    if "teachers" in param_keys:
+        teachers: dict = params["teachers"] # Dictionaries containing teacher IDs and paths
+        for id, path in teachers.items():
+            teacher = PPO.load(path=path, device=device)
+            teachers[id] = teacher
+        teacher_probabilities: list[float] = params["teacher_probabilities"]
+    else:
+        teachers = None
+        teacher_probabilities = None
+    
+    configs.update({"teachers": teachers, "teacher_probabilities": teacher_probabilities})
+
     env_settings: dict = params["env_settings"]
     general_settings: dict = env_settings["shared"]
     assert general_settings["game_id"] in game_ids
@@ -86,6 +99,7 @@ def load_settings(cfg: str) -> dict:
         "def_train": cw.DefTrainWrapper,
         "att_train": cw.AttTrainWrapper,
         "2ptrain": cw.TwoPTrainWrapper,
+        "jump_bonus": cw.JumpBonus,
     }
     for wrapper in wrappers_settings["wrappers"]:
         assert wrapper[0] in wrapper_aliases.keys()
@@ -127,18 +141,6 @@ def load_settings(cfg: str) -> dict:
         "eval_wrappers": eval_wrappers,
     })
 
-    if "teachers" in param_keys:
-        teachers: dict = params["teachers"] # Dictionaries containing teacher IDs and paths
-        for id, path in teachers.items():
-            teacher = PPO.load(path=path, device=device)
-            teachers[id] = teacher
-        teacher_probabilities: list[float] = params["teacher_probabilities"]
-    else:
-        teachers = None
-        teacher_probabilities = None
-    
-    configs.update({"teachers": teachers, "teacher_probabilities": teacher_probabilities})
-
     callbacks_settings: dict = params["callbacks_settings"]
     configs.update({"callbacks_settings": callbacks_settings})
 
@@ -166,6 +168,26 @@ def load_settings(cfg: str) -> dict:
     if "policy_kwargs" in param_keys:
         policy_kwargs: dict = params["policy_kwargs"]
         policy_settings.update({"policy_kwargs": policy_kwargs})
+
+    if "fusion_settings" in param_keys:
+        assert teachers is not None, "Must have a set of expert policies to give to the fusion policy."
+        policy_settings["policy"] = MultiExpertFusionPolicy
+        configs.update({"fusion_settings": {
+            "experts": teachers,
+            "expert_params": params["fusion_settings"],
+        }})
+        # if int(misc["model_checkpoint"]) > 0:
+        #     policy_settings["custom_objects"] = {
+        #         "policy_type": MultiExpertFusionPolicy
+        #     }
+
+    if "distil_settings" in param_keys:
+        distil_settings = params["distil_settings"]
+        distil_settings["policy_settings"]["learning_rate"] = linear_schedule(
+            initial_value=distil_settings["policy_settings"]["learning_rate"][0],
+            final_value=distil_settings["policy_settings"]["learning_rate"][1]
+        )
+        configs.update({"distil_settings": distil_settings})
     
     configs.update({"agent_type": agent_type, "policy_settings": policy_settings})
 
