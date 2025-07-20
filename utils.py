@@ -32,20 +32,17 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
     """
     policy_settings: dict = settings_config["policy_settings"]
     agent_type: PPO | RNDPPO = settings_config["agent_type"]
+    agent: PPO | RNDPPO = agent_type(env=env, **policy_settings)
 
     if policy_path[-4:] != ".zip":
         policy_path = policy_path + ".zip"
-    
+
     if os.path.isfile(policy_path):
         print("\nCheckpoint found, loading policy.")
-        agent = agent_type.load(path=policy_path, env=env, **policy_settings)
-    elif not force_load:
-        print("\nInvalid or no checkpoint given, creating new policy.")
-        agent = agent_type(env=env, **policy_settings)
-    else:
+        agent.load(policy_path)
+    elif force_load:
         raise Exception("\nInvalid checkpoint, please check policy path provided.")
         
-    
     # Print policy network architecture
     print("Policy architecture:")
     print(agent.policy)
