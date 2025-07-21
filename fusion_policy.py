@@ -13,7 +13,6 @@ from stable_baselines3.common.distributions import (
     Distribution,
     MultiCategoricalDistribution,
     StateDependentNoiseDistribution,
-    make_proba_distribution,
 )
 
 
@@ -58,6 +57,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         """
         self.experts = experts
         self.expert_selection_rate = {id: 0 for id in experts.keys()}
+        self.n_experts = len(experts)
         # Freeze expert parameters
         # Training experts alongside a student currently falls outside the scope of this project
         for expert_net in self.experts.values():
@@ -69,19 +69,15 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         self,
         use_expert_extractors: Optional[bool] = False,
         predict_expert_values: Optional[bool] = False,
-        expert_selection_method: Optional[str] = "value",
-        log_selection_rate: Optional[int] = 1024,
+        expert_selection_method: Optional[str] = "dummy",
         fixed_weights: Optional[list[float]] = None,
-        adaptive_weights_dist_kwargs: Optional[dict[str, Any]] = None,
+        adaptive_weights_kwargs: Optional[list[str]] = None, # expert-student gaps, values, entropies
     ) -> None:
         """
         Set the options for how to use expert policies.
         """
         self.use_expert_extractors = use_expert_extractors
         self.predict_expert_values = predict_expert_values
-        
-        assert log_selection_rate > 0
-        self.log_selection_rate = log_selection_rate
 
         self.valid_selection_options = [
             "dummy",
@@ -97,16 +93,25 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         self.expert_selection_method = expert_selection_method
 
         if self.expert_selection_method == "fixed_weights":
-            assert sum(fixed_weights) == 1 and len(fixed_weights) == len(self.experts)
+            assert sum(fixed_weights) == 1 and len(fixed_weights) == self.n_experts
             self.fixed_weights = fixed_weights
         elif self.expert_selection_method == "adaptive_weights":
             # Use size of extracted features dim as input size (+ additional space if using extra info)
             # NOTE: Could add a build function for modularizing + experimenting with architecture
-            # TODO: Add modular sizes for info like teacher-student gaps
             latent_dim_weights = self.features_dim
+            if adaptive_weights_kwargs is not None:
+                valid_kwargs = [
+                    "expert_student_gap",
+                    "expert_value",
+                    "expert_entropy",
+                ]
+                for kwarg in adaptive_weights_kwargs:
+                    assert kwarg in valid_kwargs, f"Invalid kwarg, must be in: {valid_kwargs}"
+                    latent_dim_weights += self.n_experts
+            self.adaptive_weights_kwargs = adaptive_weights_kwargs
             self.weights_net = nn.Sequential(
-                nn.Linear(in_features=latent_dim_weights, out_features=len(self.experts), device=self.device),
-                nn.Softmax() # Softmax weights to be between [0,1]
+                nn.Linear(in_features=latent_dim_weights, out_features=self.n_experts, device=self.device),
+                nn.Softmax(dim=-1) # Softmax weights to be between [0,1]
             )
 
     def forward(self, obs, deterministic = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
@@ -142,7 +147,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         if self.expert_selection_method == "dummy":
             # Pass model through training without learning adaptive weights (loss.backward() won't work since expert params are frozen)
             expert_mean_actions_tensor = self.action_net(latent_pi)
-            action_weights = th.zeros((obs.shape[0], len(self.experts)), device=self.device)
+            action_weights = th.zeros((obs.shape[0], self.n_experts), device=self.device)
         else:
             assert self.experts is not None, "Must set expert policies before predicting actions."
 
@@ -170,24 +175,30 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
             if self.expert_selection_method == "value":
                 # Select actions for each observation according to highest expert values
                 chosen_indices = th.stack(expert_values).argmax(dim=0)
+                if chosen_indices.ndim == 0:
+                    chosen_indices = th.unsqueeze(chosen_indices, dim=-1)
                 # Weight actions from chosen experts by 1, others by 0
-                action_weights = th.zeros((obs.shape[0], len(self.experts)), device=self.device)
+                action_weights = th.zeros((obs.shape[0], self.n_experts), device=self.device)
                 for action_idx, chosen_idx in enumerate(chosen_indices):
                     action_weights[action_idx][chosen_idx] = 1
 
             elif self.expert_selection_method == "entropy":
                 # Select actions for each observation according to lowest expert entropies
                 chosen_indices = th.stack(expert_entropies).argmin(dim=0)
+                if chosen_indices.ndim == 0:
+                    chosen_indices = th.unsqueeze(chosen_indices, dim=-1)
                 # Weight actions from chosen experts by 1, others by 0
-                action_weights = th.zeros((obs.shape[0], len(self.experts)), device=self.device)
+                action_weights = th.zeros((obs.shape[0], self.n_experts), device=self.device)
                 for action_idx, chosen_idx in enumerate(chosen_indices):
                     action_weights[action_idx][chosen_idx] = 1
 
             elif self.expert_selection_method == "random":
                 # Select actions for each observation randomly
-                chosen_indices = th.randint(low=0, high=len(self.experts), size=(obs.shape[0],)) # obs.shape[0] tells us the batch size
+                chosen_indices = th.randint(low=0, high=self.n_experts, size=(obs.shape[0],)) # obs.shape[0] tells us the batch size
+                if chosen_indices.ndim == 0:
+                    chosen_indices = th.unsqueeze(chosen_indices, dim=-1)
                 # Weight actions from chosen experts by 1, others by 0
-                action_weights = th.zeros((obs.shape[0], len(self.experts)), device=self.device)
+                action_weights = th.zeros((obs.shape[0], self.n_experts), device=self.device)
                 for action_idx, chosen_idx in enumerate(chosen_indices):
                     action_weights[action_idx][chosen_idx] = 1
 
@@ -198,15 +209,22 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
             elif self.expert_selection_method == "adaptive_weights":
                 # Weight expert actions by learnt weights
                 # TODO: Check shape of returned tensor (should just work, right?)
-                action_weights = self.weights_net(latent_pi)
+                latent_weights = latent_pi
+                if self.adaptive_weights_kwargs is not None:
+                    for kwarg in self.adaptive_weights_kwargs:
+                        if kwarg == "expert_value":
+                            latent_weights = th.cat((latent_weights, expert_values), dim=0)
+                        elif kwarg == "expert_entropy":
+                            latent_weights = th.cat((latent_weights, expert_entropies), dim=0)
+                action_weights = self.weights_net(latent_weights)
                 
             else:
                 raise ValueError(f"""Invalid value ({self.expert_selection_method}) for 'expert_selection_method'.
                                 \nValid options: {[self.valid_selection_options]}.""")
 
             # Mask expert mean actions and sum along actions dimension (dim 1)
-            expert_mean_actions_tensor *= action_weights.unsqueeze(-1)
-            expert_mean_actions_tensor  = th.sum(expert_mean_actions_tensor, dim=1)
+            expert_mean_actions_tensor = expert_mean_actions_tensor * action_weights.unsqueeze(-1)
+            expert_mean_actions_tensor = th.sum(expert_mean_actions_tensor, dim=1)
 
         # Log which experts were selected and by how much (1 if hard switch, some float in [0,1] if weighted)
         action_weights = th.sum(action_weights, dim=0)
@@ -292,6 +310,5 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
             "use_expert_extractors",
             "predict_expert_values",
             "expert_selection_method",
-            "log_selection_rate",
             "fixed_weights",
         ]

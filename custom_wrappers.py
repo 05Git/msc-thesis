@@ -6,9 +6,51 @@ import numpy as np
 
 from diambra.arena import Roles
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
-from typing import Optional, Union
+from typing import Union
 from collections import OrderedDict
 
+
+class MoveBonus(gym.Wrapper):
+    """
+    Add a small bonus for moving.
+    Requires multi_discrete action space.
+    """
+    def __init__(self, env: gym.Env, move_bonus: float = 1e-4):
+        super().__init__(env)
+        self.move_bonus = move_bonus
+    
+    def step(self, action):
+        step_result = self.env.step(action)
+        if len(step_result) == 4:
+            obs, reward, terminated, info = step_result
+            truncated = False
+        else:
+            obs, reward, terminated, truncated, info = step_result
+        if action[0] in [1,2,3,4,5] and action[1] == 0:
+            reward += self.move_bonus
+        return obs, reward, terminated, truncated, info
+    
+
+class PunchBonus(gym.Wrapper):
+    """
+    Add a small bonus for punching.
+    Requires multi_discrete action space.
+    """
+    def __init__(self, env: gym.Env, punch_bonus: float = 1e-4):
+        super().__init__(env)
+        self.punch_bonus = punch_bonus
+    
+    def step(self, action):
+        step_result = self.env.step(action)
+        if len(step_result) == 4:
+            obs, reward, terminated, info = step_result
+            truncated = False
+        else:
+            obs, reward, terminated, truncated, info = step_result
+        if action[1] in [1,2,3]:
+            reward += self.punch_bonus
+        return obs, reward, terminated, truncated, info
+    
 
 class JumpBonus(gym.Wrapper):
     """
@@ -26,7 +68,7 @@ class JumpBonus(gym.Wrapper):
             truncated = False
         else:
             obs, reward, terminated, truncated, info = step_result
-        if action[1] in [2,3,4]:
+        if action[0] in [2,3,4]:
             reward += self.jump_bonus
         return obs, reward, terminated, truncated, info
     

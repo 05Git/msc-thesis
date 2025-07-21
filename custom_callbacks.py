@@ -1,7 +1,7 @@
-import numpy as np
 import warnings
 import os
 import gymnasium as gym
+import numpy as np
 
 from fusion_policy import MultiExpertFusionPolicy
 from stable_baselines3.common.callbacks import BaseCallback, EventCallback
@@ -33,7 +33,11 @@ class ExpertSelectionCallback(BaseCallback):
                 if self.verbose > 0:
                     print("Expert selection rates:")
                 for expert_id in expert_selection_rate.keys():
-                    selection_rate = expert_selection_rate[expert_id] / self.log_rate
+                    if self.model.teacher_model.policy.expert_selection_method == "adaptive_weights":
+                        total_weight = sum(expert_selection_rate.values())
+                        selection_rate = expert_selection_rate[expert_id] / total_weight
+                    else:
+                        selection_rate = expert_selection_rate[expert_id] / self.log_rate
                     self.logger.record(f"experts/{expert_id}_selection_rate", round(selection_rate, 5) * 100)
                     if self.verbose > 0:
                         print(f"{expert_id} selection rate: {round(selection_rate, 5) * 100}%")
@@ -43,14 +47,38 @@ class ExpertSelectionCallback(BaseCallback):
                 if self.verbose > 0:
                     print("Expert selection rates:")
                 for expert_id in expert_selection_rate.keys():
-                    expert_selection_rate[expert_id] /= self.log_rate
-                    self.logger.record(f"experts/{expert_id}_selection_rate", expert_selection_rate[expert_id].item())
+                    if self.model.policy.expert_selection_method == "adaptive_weights":
+                        total_weight = sum(expert_selection_rate.values())
+                        selection_rate = expert_selection_rate[expert_id] / total_weight
+                    else:
+                        selection_rate = expert_selection_rate[expert_id] / self.log_rate
+                    self.logger.record(f"experts/{expert_id}_selection_rate", round(selection_rate, 5) * 100)
                     if self.verbose > 0:
-                        print(f"{expert_id} selection rate: {expert_selection_rate[expert_id]}")
-
+                        print(f"{expert_id} selection rate: {round(selection_rate, 5) * 100}%")
+                
             self.progress = 0
-        
+
         return True
+
+
+class WeightsNetLossTracker(BaseCallback):
+    def __init__(self, verbose = 0):
+        super().__init__(verbose)
+
+    def _on_step(self) -> bool:
+        if hasattr(self.model, "teacher_model"):
+            assert isinstance(self.model.teacher_model.policy, MultiExpertFusionPolicy)
+            for name, param in self.model.teacher_model.policy.weights_net.named_parameters():
+                if param.grad is not None:
+                    self.logger.record(f"weights_net/{name}_loss", param.grad.norm().item())
+        else:
+            assert isinstance(self.model.policy, MultiExpertFusionPolicy)
+            for name, param in self.model.policy.weights_net.named_parameters():
+                if param.grad is not None:
+                    self.logger.record(f"weights_net/{name}_loss", param.grad.norm().item())
+
+        return True
+
 
 class ArcadeMetricsTrainCallback(BaseCallback):
     """

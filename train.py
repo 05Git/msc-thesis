@@ -104,6 +104,13 @@ def main(cfg: str, policy_path: str, deterministic: bool):
     if "expert_selection_rate" in callbacks_config.keys() and callbacks_config["expert_selection_rate"]:
         callback_list.callbacks.append(cc.ExpertSelectionCallback(verbose=1, log_rate=callbacks_config["log_rate"]))
 
+    if hasattr(agent, "teacher_model"):
+        if hasattr(agent.teacher_model.policy, "weights_net"):
+            callback_list.callbacks.append(cc.WeightsNetLossTracker(verbose=1))
+    else:
+        if hasattr(agent.policy, "weights_net"):
+            callback_list.callbacks.append(cc.WeightsNetLossTracker(verbose=1))
+
     try:
         agent.learn(
             total_timesteps=configs["misc"]["timesteps"],
