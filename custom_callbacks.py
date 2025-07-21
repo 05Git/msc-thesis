@@ -3,12 +3,54 @@ import warnings
 import os
 import gymnasium as gym
 
+from fusion_policy import MultiExpertFusionPolicy
 from stable_baselines3.common.callbacks import BaseCallback, EventCallback
 from stable_baselines3.common.vec_env import VecEnv, sync_envs_normalization
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from utils import evaluate_policy_with_arcade_metrics
 from typing import Any, Optional, Union
 
+
+class ExpertSelectionCallback(BaseCallback):
+    """
+    Tracks the average selection rate of expert policies by a MultiExpertFusionPolicy.
+    If using weights, this will return the average value of each expert's weight over log_rate.
+
+    :param log_rate: (int) How many steps to wait before logging expert selection rate.
+    """
+    def __init__(self, verbose = 0, log_rate: int = 1024):
+        super().__init__(verbose)
+        self.log_rate = log_rate
+        self.progress = 0
+
+    def _on_step(self) -> bool:
+        self.progress += self.model.n_envs
+        if self.progress >= self.log_rate:
+            # Check if fusion network is being used as a teacher model for policy distillation (sb3_distill syntax)
+            if hasattr(self.model, "teacher_model"):
+                assert isinstance(self.model.teacher_model.policy, MultiExpertFusionPolicy)
+                expert_selection_rate: dict = self.model.teacher_model.policy.get_expert_selection_rates()
+                if self.verbose > 0:
+                    print("Expert selection rates:")
+                for expert_id in expert_selection_rate.keys():
+                    selection_rate = expert_selection_rate[expert_id] / self.log_rate
+                    self.logger.record(f"experts/{expert_id}_selection_rate", round(selection_rate, 5) * 100)
+                    if self.verbose > 0:
+                        print(f"{expert_id} selection rate: {round(selection_rate, 5) * 100}%")
+            else:
+                assert isinstance(self.model.policy, MultiExpertFusionPolicy)
+                expert_selection_rate: dict = self.model.policy.get_expert_selection_rates()
+                if self.verbose > 0:
+                    print("Expert selection rates:")
+                for expert_id in expert_selection_rate.keys():
+                    expert_selection_rate[expert_id] /= self.log_rate
+                    self.logger.record(f"experts/{expert_id}_selection_rate", expert_selection_rate[expert_id].item())
+                    if self.verbose > 0:
+                        print(f"{expert_id} selection rate: {expert_selection_rate[expert_id]}")
+
+            self.progress = 0
+        
+        return True
 
 class ArcadeMetricsTrainCallback(BaseCallback):
     """

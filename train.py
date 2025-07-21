@@ -14,6 +14,7 @@ from diambra.arena.stable_baselines3.sb3_utils import AutoSave
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env
 from diambra.arena import SpaceTypes
 from settings import load_settings
+from fusion_policy import MultiExpertFusionPolicy
 
 # diambra run -s _ python train.py --cfg _ --policy_path _ --deterministic
 
@@ -100,6 +101,9 @@ def main(cfg: str, policy_path: str, deterministic: bool):
     if "unique_actions" in callbacks_config.keys() and callbacks_config["unique_actions"]:
         callback_list.callbacks.append(cc.UniqueActionsCallback(verbose=1))
 
+    if "expert_selection_rate" in callbacks_config.keys() and callbacks_config["expert_selection_rate"]:
+        callback_list.callbacks.append(cc.ExpertSelectionCallback(verbose=1, log_rate=callbacks_config["log_rate"]))
+
     try:
         agent.learn(
             total_timesteps=configs["misc"]["timesteps"],
@@ -110,7 +114,6 @@ def main(cfg: str, policy_path: str, deterministic: bool):
         )
     except KeyboardInterrupt:
         print("Training interrupted. Saving model before exiting.")
-
 
     # Save the agent
     model_checkpoint = str(int(model_checkpoint) + configs["misc"]["timesteps"])

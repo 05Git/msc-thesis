@@ -8,28 +8,28 @@ misc:
   num_train_envs: 8
   num_eval_envs: 4
   timesteps: 2_000_000
-  model_checkpoint: "0"
+  model_checkpoint: "0_autosave_500000"
   n_eval_episodes: 100
 
-fusion_settings:
-  use_expert_extractors: True
-  predict_expert_values: True
-  expert_selection_method: value
+# fusion_settings:
+#   use_expert_extractors: True
+#   predict_expert_values: True
+#   expert_selection_method: value
 
-distil_settings:
-  distil_type: student
-  policy_settings:
-    policy: CnnPolicy
-    gamma: 0.99
-    learning_rate: [2.5e-5, 2.5e-6]
-    n_steps: 128
-    gae_lambda: 0.95
-    ent_coef: 0.
-    vf_coef: 0.5
-    max_grad_norm: 0.5
-    use_sde: False
-    sde_sample_freq: -1
-    verbose: 1
+# distil_settings:
+#   distil_type: student
+#   policy_settings:
+#     policy: CnnPolicy
+#     gamma: 0.99
+#     learning_rate: [2.5e-5, 2.5e-6]
+#     n_steps: 128
+#     gae_lambda: 0.95
+#     ent_coef: 0.
+#     vf_coef: 0.5
+#     max_grad_norm: 0.5
+#     use_sde: False
+#     sde_sample_freq: -1
+#     verbose: 1
 
 policy_settings:
   policy: CnnPolicy
@@ -63,6 +63,8 @@ callbacks_settings:
   autosave: True
   check_freq: 500_000
   arcade_metrics: True
+  expert_selection_rate: True
+  log_rate: 1024
 
 env_settings:
   shared:

@@ -8,9 +8,10 @@ import custom_wrappers as cw
 
 from stable_baselines3 import PPO
 from RND import RNDPPO
-from distillation_models import MultiExpertFusionPolicy
+from fusion_policy import MultiExpertFusionPolicy
 from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings, SpaceTypes, load_settings_flat_dict
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
+from stable_baselines3.common.torch_layers import CombinedExtractor, NatureCNN
 
 # IDs of games currently implemented
 game_ids = [
@@ -25,6 +26,11 @@ device = th.device("cuda" if th.cuda.is_available() else "cpu")
 print(f"Device: {device}")
 
 def load_settings(cfg: str) -> dict:
+    """
+    Load settings from a yaml config.
+
+    :param cfg: (str) Path to a yaml file.
+    """
     print("Loading settings config...")
     # Dictionary of settings configs
     configs = {}
@@ -70,12 +76,10 @@ def load_settings(cfg: str) -> dict:
         for id, path in teachers.items():
             teacher = PPO.load(path=path, device=device)
             teachers[id] = teacher
-        teacher_probabilities: list[float] = params["teacher_probabilities"]
     else:
         teachers = None
-        teacher_probabilities = None
     
-    configs.update({"teachers": teachers, "teacher_probabilities": teacher_probabilities})
+    configs.update({"teachers": teachers})
 
     env_settings: dict = params["env_settings"]
     general_settings: dict = env_settings["shared"]
@@ -172,6 +176,15 @@ def load_settings(cfg: str) -> dict:
 
     if "fusion_settings" in param_keys:
         assert teachers is not None, "Must have a set of expert policies to give to the fusion policy."
+        if "features_extractor_class" not in policy_settings.keys():
+            if policy_settings["policy"] == "CnnPolicy":
+                # Image obs only
+                policy_settings["features_extractor_class"] = NatureCNN
+            elif policy_settings["policy"] == "MultiInputPolicy":
+                # Image and vector obs
+                policy_settings["features_extractor_class"] = CombinedExtractor
+            else:
+                raise ValueError(f"Policy type must be 'CnnPolicy' or 'MultiInputPolicy'.")
         policy_settings["policy"] = MultiExpertFusionPolicy
         configs.update({"fusion_settings": {
             "experts": teachers,

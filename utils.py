@@ -19,15 +19,17 @@ from stable_baselines3.common.utils import set_random_seed, obs_as_tensor
 from stable_baselines3.common import type_aliases, distributions
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Any, Callable, Optional, Union
+from fusion_policy import MultiExpertFusionPolicy
 
 
 def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load: bool = False):
     """
     Load a PPO, RNDPPO, or DistilSolver agent.
 
-    :param env: Environment for the agent to interact with.
-    :param policy_path: Path to load the policy.
-    :param force_load: If False and the given checkpoint is invalid, a new policy will be created.
+    :param settings_config: (dict) Dictionary containing necessary policy settings.
+    :param env: (gym.Env) Environment for the agent to interact with.
+    :param policy_path: (str) Path to load the policy.
+    :param force_load: (bool) If False and the given checkpoint is invalid, a new policy will be created.
     Otherwise, this will return an error.
     """
     policy_settings: dict = settings_config["policy_settings"]
@@ -48,6 +50,7 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
     print(agent.policy)
 
     if "fusion_settings" in settings_config.keys():
+        assert isinstance(agent.policy, MultiExpertFusionPolicy)
         fusion_settings = settings_config["fusion_settings"]
         agent.policy.set_experts(fusion_settings["experts"])
         agent.policy.set_expert_params(**fusion_settings["expert_params"])
