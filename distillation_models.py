@@ -145,7 +145,7 @@ class MultiExpertFusionPolicy(ActorCriticCnnPolicy):
 
         if self.expert_selection_method == "dummy":
             expert_mean_actions_tensor = self.action_net(latent_pi)
-            action_weights = th.zeros((obs.shape[0], len(self.experts)))
+            action_weights = th.zeros((obs.shape[0], len(self.experts)), device=self.device)
         else:
             assert self.experts is not None, "Must set expert policies before predicting actions."
 
@@ -177,26 +177,26 @@ class MultiExpertFusionPolicy(ActorCriticCnnPolicy):
                 # Select actions for each observation according to highest expert values
                 chosen_indices = th.stack(expert_values).argmax(dim=0)
                 # Weight actions from chosen experts by 1, others by 0
-                action_weights = th.zeros((obs.shape[0], len(self.experts)))
+                action_weights = th.zeros((obs.shape[0], len(self.experts)), device=self.device)
                 for action_idx, chosen_idx in enumerate(chosen_indices):
                     action_weights[action_idx][chosen_idx] = 1
             elif self.expert_selection_method == "entropy":
                 # Select actions for each observation according to lowest expert entropies
                 chosen_indices = th.stack(expert_entropies).argmin(dim=0)
                 # Weight actions from chosen experts by 1, others by 0
-                action_weights = th.zeros((obs.shape[0], len(self.experts)))
+                action_weights = th.zeros((obs.shape[0], len(self.experts)), device=self.device)
                 for action_idx, chosen_idx in enumerate(chosen_indices):
                     action_weights[action_idx][chosen_idx] = 1
             elif self.expert_selection_method == "random":
                 # Select actions for each observation randomly
                 chosen_indices = th.randint(low=0, high=len(self.experts), size=(obs.shape[0],)) # obs.shape[0] tells us the batch size
                 # Weight actions from chosen experts by 1, others by 0
-                action_weights = th.zeros((obs.shape[0], len(self.experts)))
+                action_weights = th.zeros((obs.shape[0], len(self.experts)), device=self.device)
                 for action_idx, chosen_idx in enumerate(chosen_indices):
                     action_weights[action_idx][chosen_idx] = 1
             elif self.expert_selection_method == "fixed_weights":
                 # Weight expert actions by pre-chosen values
-                action_weights = th.tensor(self.fixed_weights).repeat(obs.shape[0], 1)
+                action_weights = th.tensor(self.fixed_weights, device=self.device).repeat(obs.shape[0], 1)
             elif self.expert_selection_method == "adaptive_weights":
                 raise NotImplementedError("Sorry, coming soon.")
             else:

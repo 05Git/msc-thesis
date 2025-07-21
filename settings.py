@@ -22,6 +22,7 @@ game_ids = [
 
 # Device
 device = th.device("cuda" if th.cuda.is_available() else "cpu")
+print(f"Device: {device}")
 
 def load_settings(cfg: str) -> dict:
     print("Loading settings config...")
@@ -146,8 +147,8 @@ def load_settings(cfg: str) -> dict:
 
     policy_settings: dict = params["policy_settings"]
     assert policy_settings["batch_size"] % misc["num_train_envs"] == 0
-    policy_settings.update({"device": device})
-    policy_settings.update({"seed": misc["seed"]})
+    policy_settings["device"] = device
+    policy_settings["seed"] = misc["seed"]
     policy_settings["learning_rate"] = linear_schedule(
         policy_settings["learning_rate"][0],
         policy_settings["learning_rate"][1]
@@ -176,10 +177,6 @@ def load_settings(cfg: str) -> dict:
             "experts": teachers,
             "expert_params": params["fusion_settings"],
         }})
-        # if int(misc["model_checkpoint"]) > 0:
-        #     policy_settings["custom_objects"] = {
-        #         "policy_type": MultiExpertFusionPolicy
-        #     }
 
     if "distil_settings" in param_keys:
         distil_settings = params["distil_settings"]
@@ -187,6 +184,8 @@ def load_settings(cfg: str) -> dict:
             initial_value=distil_settings["policy_settings"]["learning_rate"][0],
             final_value=distil_settings["policy_settings"]["learning_rate"][1]
         )
+        distil_settings["policy_settings"]["device"] = device
+        distil_settings["policy_settings"]["seed"] = misc["seed"]
         configs.update({"distil_settings": distil_settings})
     
     configs.update({"agent_type": agent_type, "policy_settings": policy_settings})
