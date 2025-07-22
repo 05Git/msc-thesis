@@ -208,14 +208,16 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
 
             elif self.expert_selection_method == "adaptive_weights":
                 # Weight expert actions by learnt weights
-                # TODO: Check shape of returned tensor (should just work, right?)
                 latent_weights = latent_pi
                 if self.adaptive_weights_kwargs is not None:
+                    # Add extra info to the latent space if specified by kwargs
                     for kwarg in self.adaptive_weights_kwargs:
                         if kwarg == "expert_value":
-                            latent_weights = th.cat((latent_weights, expert_values), dim=0)
+                            reshaped_values = th.stack(expert_values, dim=1) # Stack along n_envs dimension (dim 1) to match latent_weights
+                            latent_weights = th.cat((latent_weights, reshaped_values), dim=1)
                         elif kwarg == "expert_entropy":
-                            latent_weights = th.cat((latent_weights, expert_entropies), dim=0)
+                            reshaped_entropies = th.stack(expert_entropies, dim=1)
+                            latent_weights = th.cat((latent_weights, reshaped_entropies), dim=1)
                 action_weights = self.weights_net(latent_weights)
                 
             else:

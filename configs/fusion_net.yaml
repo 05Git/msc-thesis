@@ -1,6 +1,6 @@
 folders:
   parent_dir: fusion_policies
-  model_name: adaptive_weights
+  model_name: adaptive_weights_state_info_val
 
 misc:
   seed: 0
@@ -15,7 +15,7 @@ fusion_settings:
   use_expert_extractors: True
   predict_expert_values: True
   expert_selection_method: adaptive_weights
-#   adaptive_weights_kwargs: [expert_value, expert_entropy]
+  adaptive_weights_kwargs: [expert_value]
 
 # distil_settings:
 #   distil_type: student

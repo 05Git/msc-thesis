@@ -16,6 +16,7 @@ from diambra.arena import EnvironmentSettings, WrappersSettings, RecordingSettin
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import VecEnv, DummyVecEnv, SubprocVecEnv, VecMonitor, is_vecenv_wrapped
 from stable_baselines3.common.utils import set_random_seed, obs_as_tensor
+from stable_baselines3.common.save_util import load_from_zip_file
 from stable_baselines3.common import type_aliases, distributions
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Any, Callable, Optional, Union
@@ -36,24 +37,38 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
     agent_type: PPO | RNDPPO = settings_config["agent_type"]
     agent: PPO | RNDPPO = agent_type(env=env, **policy_settings)
 
-    if policy_path[-4:] != ".zip":
-        policy_path = policy_path + ".zip"
-
-    if os.path.isfile(policy_path):
-        print("\nCheckpoint found, loading policy.")
-        agent.load(policy_path)
-    elif force_load:
-        raise Exception("\nInvalid checkpoint, please check policy path provided.")
-        
-    # Print policy network architecture
-    print("Policy architecture:")
-    print(agent.policy)
-
     if "fusion_settings" in settings_config.keys():
         assert isinstance(agent.policy, MultiExpertFusionPolicy)
         fusion_settings = settings_config["fusion_settings"]
         agent.policy.set_experts(fusion_settings["experts"])
         agent.policy.set_expert_params(**fusion_settings["expert_params"])
+
+    if policy_path[-4:] != ".zip":
+        policy_path = policy_path + ".zip"
+    
+    if os.path.isfile(policy_path):
+        print("\nCheckpoint found, loading policy.")
+        if hasattr(agent.policy, "weights_net"):
+            # stable_baselines3's load() function builds a new model and sets the params for it after some preprocessing.
+            # Since weights_net (for adaptive weights) is set after the model is loaded, this causes errors when loading
+            # params from the state_dict, since the newly created model has no weights_net to load the saved weights into.
+            # As such, for a fusion policy with adaptive weights, we skip the preprocessing steps and go straight to loading
+            # the params directly. This works right now since the models are saved in line with what stable_baselines3 expects
+            # out of its preprocessing stage, however this may cause issues if this is not the case.
+            _, params, _ = load_from_zip_file(
+                policy_path,
+                device=policy_settings["device"],
+                custom_objects=policy_settings["custom_objects"] if "custom_objects" in policy_settings.keys() else None,
+                print_system_info=True,
+            )
+            try:
+                agent.set_parameters(params, exact_match=True, device=policy_settings["device"])
+            except RuntimeError as e:
+                raise e
+        else:
+            agent.load(policy_path)
+    elif force_load:
+        raise Exception("\nInvalid checkpoint, please check policy path provided.")
 
     if "distil_settings" in settings_config.keys():
         distil_type = settings_config["distil_settings"]["distil_type"]
@@ -69,7 +84,18 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
         student_policy_settings = settings_config["distil_settings"]["policy_settings"]
         student = student_type(env=env, **student_policy_settings)
         student.set_teacher(agent)
+
+        # Print policy network architecture
+        print("Student architecture:")
+        print(student.policy)
+        print("Teacher architecture:")
+        print(student.teacher_model.policy)
+
         return student
+
+    # Print policy network architecture
+    print("Policy architecture:")
+    print(agent.policy)
     
     return agent
 

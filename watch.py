@@ -10,6 +10,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 from diambra.arena import SpaceTypes
 from utils import load_agent
 from settings import load_settings
+from fusion_policy import MultiExpertFusionPolicy
 
 # diambra run -g python watch.py --cfg _ --policy_path _ --deterministic
 
@@ -39,6 +40,8 @@ def main(cfg: str, policy_path: str, deterministic: bool):
     agent = load_agent(settings_config=configs, env=env, policy_path=checkpoint_path, force_load=True)
 
     obs = env.reset()
+    check_weights = 500
+    progress = 0
     while True:
         # dist = agent.policy.get_distribution(th.tensor(obs).float().to(agent.device))
         # move_logits = dist.distribution[0].logits
@@ -46,6 +49,15 @@ def main(cfg: str, policy_path: str, deterministic: bool):
         # print("Move Logits:", move_logits)
         # print("Act Logits:", act_logits)
         actions, _ = agent.predict(obs, deterministic=deterministic)
+        if isinstance(agent.policy, MultiExpertFusionPolicy) \
+              and hasattr(agent.policy, "weights_net") \
+              and progress >= check_weights:
+            expert_weights: dict = agent.policy.get_expert_selection_rates()
+            total_weight = sum(expert_weights.values())
+            for expert_id, expert_weight in expert_weights.items():
+                expert_weight /= total_weight
+                print(f"{expert_id} weight: {round(expert_weight, 5) * 100}")
+            progress = 0
         # print(f"Actions: {actions}")
         obs, rew, done, info = env.step(actions)
         # print(f"Observation: {obs}")
@@ -54,6 +66,7 @@ def main(cfg: str, policy_path: str, deterministic: bool):
         
         if done:
             break
+        progress += agent.n_envs
 
     env.close()
 
