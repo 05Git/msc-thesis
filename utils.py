@@ -20,7 +20,7 @@ from stable_baselines3.common.save_util import load_from_zip_file
 from stable_baselines3.common import type_aliases, distributions
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Any, Callable, Optional, Union
-from fusion_policy import MultiExpertFusionPolicy
+from FusionNet import MultiExpertFusionPolicy
 
 
 def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load: bool = False):

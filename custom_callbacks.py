@@ -3,7 +3,7 @@ import os
 import gymnasium as gym
 import numpy as np
 
-from fusion_policy import MultiExpertFusionPolicy
+from FusionNet import MultiExpertFusionPolicy
 from stable_baselines3.common.callbacks import BaseCallback, EventCallback
 from stable_baselines3.common.vec_env import VecEnv, sync_envs_normalization
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm

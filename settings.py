@@ -8,7 +8,7 @@ import custom_wrappers as cw
 
 from stable_baselines3 import PPO
 from RND import RNDPPO
-from fusion_policy import MultiExpertFusionPolicy
+from FusionNet import MultiExpertFusionPolicy
 from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings, SpaceTypes, load_settings_flat_dict
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
 from stable_baselines3.common.torch_layers import CombinedExtractor, NatureCNN

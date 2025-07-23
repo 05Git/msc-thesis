@@ -2,9 +2,10 @@ import gymnasium as gym
 import torch as th
 import torch.nn as nn
 
-from typing import Optional, Tuple, Callable
+from typing import Optional, Tuple, Callable, Union
+from stable_baselines3 import PPO
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
-from stable_baselines3.common.type_aliases import PyTorchObs
+from stable_baselines3.common.type_aliases import PyTorchObs, GymEnv
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.distributions import (
     BernoulliDistribution,
@@ -13,6 +14,8 @@ from stable_baselines3.common.distributions import (
     Distribution,
     MultiCategoricalDistribution,
     StateDependentNoiseDistribution,
+    kl_divergence,
+    sum_independent_dims,
 )
 
 
@@ -72,13 +75,17 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         expert_selection_method: Optional[str] = "dummy",
         fixed_weights: Optional[list[float]] = None,
         adaptive_weights_kwargs: Optional[list[str]] = None, # expert-student gaps, values, entropies
+        adaptive_weights_ent_coef: Optional[float] = 0.,
+        adaptive_weights_aux_loss_term: Optional[float] = 0.5,
+        total_timesteps: Optional[int] = 1_000_000,
+        adaptive_weights_optimizer_kwargs: Optional[dict] = {},
     ) -> None:
         """
         Set the options for how to use expert policies.
         """
         self.use_expert_extractors = use_expert_extractors
         self.predict_expert_values = predict_expert_values
-
+        
         self.valid_selection_options = [
             "dummy",
             "value",
@@ -113,6 +120,15 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
                 nn.Linear(in_features=latent_dim_weights, out_features=self.n_experts, device=self.device),
                 nn.Softmax(dim=-1) # Softmax weights to be between [0,1]
             )
+            self.adaptive_weights_ent_coef = adaptive_weights_ent_coef
+            self.weights_net_aux_loss_term = adaptive_weights_aux_loss_term
+            self._weights_net_total_timesteps = total_timesteps # Track timesteps for annealing divergence coef
+            self._weights_net_num_timesteps = 0
+            # TODO: Test only using this optim to train weights_net, don't use PPO loss at all.
+            self.weights_net_optimizer = th.optim.Adam(
+                params=self.weights_net.parameters(),
+                **adaptive_weights_optimizer_kwargs
+            )
 
     def forward(self, obs, deterministic = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
@@ -141,6 +157,8 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         """
         ################################################## MODIFIED ######################################################
         # Add extra dimension at dim 0 if obs is unbatched
+        # NOTE: Haven't tested with dict obs yet, but this probably breaks it.
+        # Will need to readjust to work with dict obs, if the time comes for it.
         if obs.ndim < 4:
             obs = obs.unsqueeze(dim=0)
 
@@ -168,7 +186,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
                 expert_entropies.append(expert_net.policy.get_distribution(obs).entropy().squeeze(-1))
                 expert_values.append(expert_net.policy.predict_values(obs).squeeze(-1))
 
-            # Reshape mean actions to [batch_size, num_experts, ...]
+            # Reshape mean actions to [n_envs, n_experts, ...]
             expert_mean_actions_tensor = th.stack(expert_mean_actions)
             expert_mean_actions_tensor = expert_mean_actions_tensor.permute(1, 0, *range(2, expert_mean_actions_tensor.ndim))
 
@@ -233,7 +251,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         for idx, expert_id in enumerate(self.experts.keys()):
             self.expert_selection_rate[expert_id] += action_weights[idx].item()
         ##################################################################################################################
-
+        
         # MODIFIED: Distributions built using expert mean actions
         if isinstance(self.action_dist, DiagGaussianDistribution):
             return self.action_dist.proba_distribution(expert_mean_actions_tensor, self.log_std)
@@ -250,7 +268,40 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
             return self.action_dist.proba_distribution(expert_mean_actions_tensor, self.log_std, latent_pi) # NOTE: Might want to investigate using experts' latent_pi if possible
         else:
             raise ValueError("Invalid action distribution")
-    
+
+    def compute_weights_net_auxiliary_loss(self, action_dist: Distribution, obs: PyTorchObs) -> None:
+        # Calculate auxiliary loss for weights_net
+        # The idea's there, just need to implement in a PPO subclass
+        actions = action_dist.get_actions(deterministic=True)
+        _, log_prob, entropy = self.evaluate_actions(obs=obs, actions=actions)
+        if entropy is None:
+            entropy = -th.mean(log_prob)
+        else:
+            entropy = -th.mean(entropy)
+
+        # Reshape back to [n_experts, n_envs, ...] for computing KL-divergence per expert
+        expert_mean_actions_tensor = expert_mean_actions_tensor.permute(1, 0, *range(2, expert_mean_actions_tensor.ndim))
+        divergence_weight = 1 / self.n_experts # Weight each expert's divergence uniformally
+        divergence_loss = th.stack([kl_divergence(expert_actions, actions) * divergence_weight
+                                    for expert_actions in expert_mean_actions_tensor])
+        if isinstance(self.action_dist, (DiagGaussianDistribution, StateDependentNoiseDistribution)):
+            divergence_loss = sum_independent_dims(divergence_loss)
+        divergence_loss = th.mean(divergence_loss)
+        
+        div_coef = 1 - (self._weights_net_num_timesteps / self._weights_net_total_timesteps) # Anneal by progress
+        weights_net_auxiliary_loss = divergence_loss * div_coef + entropy * self.adaptive_weights_ent_coef
+        weights_net_auxiliary_loss = weights_net_auxiliary_loss * self.weights_net_aux_loss_term
+        self.weights_net_optimizer.zero_grad()
+        weights_net_auxiliary_loss.backward()
+        self.weights_net_optimizer.step()
+
+        if self._weights_net_num_timesteps < self._weights_net_total_timesteps:
+            # Increment progress by batch size
+            self._weights_net_num_timesteps += obs.shape[0]
+            if self._weights_net_num_timesteps > self._weights_net_total_timesteps:
+                # Check in case it exceeds total timesteps accidentally
+                self._weights_net_num_timesteps = self._weights_net_total_timesteps
+        
     # MODIFIED: Get the expert selection rates' current values, then reset them. Used for logging metrics.
     def get_expert_selection_rates(self) -> th.Tensor:
         """
@@ -314,3 +365,29 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
             "expert_selection_method",
             "fixed_weights",
         ]
+
+
+class MultiExpertFusionNet(PPO):
+    def __init__(
+        self,
+        policy: MultiExpertFusionPolicy,
+        env: Union[GymEnv, str],
+        weights_net_n_epochs: int = 128,
+        *args,
+        **kwargs,
+    ):
+        assert isinstance(policy, MultiExpertFusionPolicy)
+        super().__init__(
+            policy,
+            env,
+            *args,
+            **kwargs
+        )
+        self.weights_net_n_epochs = weights_net_n_epochs
+
+    def train(self) -> None:
+        super().train()
+        if hasattr(self.policy, "weights_net"):
+            self.policy.weights_net.train()
+            for epoch in range(self.weights_net_n_epochs):
+                approx_kl_divs = []
