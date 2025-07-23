@@ -2,7 +2,7 @@ import gymnasium as gym
 import torch as th
 import torch.nn as nn
 
-from typing import Optional, Tuple, Callable, Any
+from typing import Optional, Tuple, Callable
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.type_aliases import PyTorchObs
 from stable_baselines3.common.policies import ActorCriticPolicy

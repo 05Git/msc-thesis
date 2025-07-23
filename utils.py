@@ -33,45 +33,58 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
     :param force_load: (bool) If False and the given checkpoint is invalid, a new policy will be created.
     Otherwise, this will return an error.
     """
-    policy_settings: dict = settings_config["policy_settings"]
-    agent_type: PPO | RNDPPO = settings_config["agent_type"]
-    agent: PPO | RNDPPO = agent_type(env=env, **policy_settings)
-
-    if "fusion_settings" in settings_config.keys():
-        assert isinstance(agent.policy, MultiExpertFusionPolicy)
-        fusion_settings = settings_config["fusion_settings"]
-        agent.policy.set_experts(fusion_settings["experts"])
-        agent.policy.set_expert_params(**fusion_settings["expert_params"])
-
     if policy_path[-4:] != ".zip":
         policy_path = policy_path + ".zip"
-    
+
+    policy_settings: dict = settings_config["policy_settings"]
+    agent_type: PPO | RNDPPO = settings_config["agent_type"]
+
     if os.path.isfile(policy_path):
         print("\nCheckpoint found, loading policy.")
-        if hasattr(agent.policy, "weights_net"):
-            # stable_baselines3's load() function builds a new model and sets the params for it after some preprocessing.
-            # Since weights_net (for adaptive weights) is set after the model is loaded, this causes errors when loading
-            # params from the state_dict, since the newly created model has no weights_net to load the saved weights into.
-            # As such, for a fusion policy with adaptive weights, we skip the preprocessing steps and go straight to loading
-            # the params directly. This works right now since the models are saved in line with what stable_baselines3 expects
-            # out of its preprocessing stage, however this may cause issues if this is not the case.
-            _, params, _ = load_from_zip_file(
-                policy_path,
-                device=policy_settings["device"],
-                custom_objects=policy_settings["custom_objects"] if "custom_objects" in policy_settings.keys() else None,
-                print_system_info=True,
-            )
-            try:
-                agent.set_parameters(params, exact_match=True, device=policy_settings["device"])
-            except RuntimeError as e:
-                raise e
+        if "fusion_settings" in settings_config.keys():
+            agent = agent_type(env=env, **policy_settings)
+            assert isinstance(agent.policy, MultiExpertFusionPolicy)
+
+            fusion_settings: dict = settings_config["fusion_settings"]
+            if "fixed_weights" in fusion_settings["expert_params"].keys() \
+                and fusion_settings["expert_params"]["fixed_weights"] == "uniform":
+                n_experts = len(fusion_settings["experts"])
+                fusion_settings["expert_params"]["fixed_weights"] = [
+                    1 / n_experts for _ in range(n_experts)
+                ]
+            agent.policy.set_experts(fusion_settings["experts"])
+            agent.policy.set_expert_params(**fusion_settings["expert_params"])
+
+            if hasattr(agent.policy, "weights_net"):
+                # stable_baselines3's load() function builds a new model and sets the params for it after some preprocessing.
+                # Since weights_net (for adaptive weights) is set after the model is loaded, this causes errors when loading
+                # params from the state_dict, since the newly created model has no weights_net to load the saved weights into.
+                # As such, for a fusion policy with adaptive weights, we skip the preprocessing steps and go straight to loading
+                # the params directly. This works right now since the models are saved in line with what stable_baselines3 expects
+                # out of its preprocessing stage, however this may cause issues if this is not the case.
+                _, params, _ = load_from_zip_file(
+                    policy_path,
+                    device=policy_settings["device"],
+                    custom_objects=policy_settings["custom_objects"] if "custom_objects" in policy_settings.keys() else None,
+                    print_system_info=True,
+                )
+                try:
+                    agent.set_parameters(params, exact_match=True, device=policy_settings["device"])
+                except RuntimeError as e:
+                    raise e
+            else:
+                agent.load(policy_path)
         else:
-            agent.load(policy_path)
-    elif force_load:
+            agent = agent_type.load(path=policy_path, env=env, **policy_settings)
+    elif not force_load:
+        agent = agent_type(env=env, **policy_settings)
+    else:
         raise Exception("\nInvalid checkpoint, please check policy path provided.")
 
     if "distil_settings" in settings_config.keys():
-        distil_type = settings_config["distil_settings"]["distil_type"]
+        distil_settings: dict = settings_config["distil_settings"]
+        # Get the type of distillation method
+        distil_type: str = distil_settings["distil_type"]
         if distil_type == "student":
             student_type = StudentDistill
         elif distil_type == "teacher":
@@ -81,9 +94,30 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
         else:
             raise ValueError(f"""Invalid student type ({distil_type}). Please select from:
                              'student', 'teacher', 'ppd'.""")
-        student_policy_settings = settings_config["distil_settings"]["policy_settings"]
-        student = student_type(env=env, **student_policy_settings)
-        student.set_teacher(agent)
+        student_policy_settings: dict = distil_settings["policy_settings"]
+
+        # Load policy path if specified, else create new student policy
+        if "policy_path" in distil_settings.keys():
+            student_policy_path = distil_settings["policy_path"]
+            if student_policy_path[-4:] != ".zip":
+                student_policy_path = student_policy_path + ".zip"
+            if os.path.isfile(student_policy_path):
+                student = student_type.load(path=student_policy_path, env=env, **student_policy_settings)
+            else:
+                raise Exception("\nInvalid student policy checkpoint, please check path provided.")
+        elif not force_load:
+            student = student_type(env=env, **student_policy_settings)
+        else:
+            raise Exception("\nInvalid student policy checkpoint, please check path provided.")
+        
+        # Check for specific PPD settings
+        # TODO: Test if this check is necessary
+        if student_type == ProximalPolicyDistillation:
+            if "ppd_settings" not in distil_settings.keys():
+                distil_settings["ppd_settings"] = {}
+            student.set_teacher(agent, **distil_settings["ppd_settings"])
+        else:
+            student.set_teacher(agent)
 
         # Print policy network architecture
         print("Student architecture:")
@@ -113,8 +147,9 @@ def train_eval_split(game_id: str,
                      allow_early_resets: bool=True, start_method: str=None, no_vec: bool=False,
                      use_subprocess: bool=True, log_dir_base: str="/tmp/DIAMBRALog/"):
     """
-    Modified version of make_sb3_env to simplify making separate train and eval envs.
-    Original code available at: __
+    Modified version of make_sb3_env to simplify making separate train and eval envs. All lines of code which have been changed
+    or added have been marked with ## MODIFIED ##.
+    Original code available at: https://github.com/diambra/arena/blob/main/diambra/arena/stable_baselines3/make_sb3_env.py#L11
 
     :param game_id: (str) the game environment ID
     :param num_train_envs: (int) Number of training environments
@@ -178,7 +213,9 @@ def train_eval_split(game_id: str,
 def evaluate_policy_with_arcade_metrics(
     model: "type_aliases.PolicyPredictor",
     env: Union[gym.Env, VecEnv],
+    ################# MODIFIED ###################
     teachers: dict[str: OnPolicyAlgorithm] = None,
+    ##############################################
     n_eval_episodes: int = 10,
     deterministic: bool = True,
     render: bool = False,
@@ -188,7 +225,8 @@ def evaluate_policy_with_arcade_metrics(
     warn: bool = True,
 ):
     """
-    Extended version of stable_baseline3's evaluate_poliy method to track sutom metrics
+    Extended version of stable_baseline3's evaluate_poliy method to track custom metrics. All lines of code which have been changed
+    or added have been marked with ## MODIFIED ##.
     Original code available at: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/evaluation.py
 
     :param model: The RL agent you want to evaluate. This can be any object
@@ -361,7 +399,7 @@ def eval_student_teacher_likelihood(
 ):
     """
     Evaluate student-teacher similarity
-    Utilises code from stable_baselines3's evaluate_policy method, modified code is highlighted as such
+    Utilises code from stable_baselines3's evaluate_policy method, modified code is highlighted with ## MODIFIED ##.
 
     :param student: Student policy.
     :param env: Environment for student to interact with.

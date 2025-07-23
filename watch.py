@@ -41,6 +41,7 @@ def main(cfg: str, policy_path: str, deterministic: bool):
 
     obs = env.reset()
     check_weights = 500
+    check_info = 10
     progress = 0
     while True:
         # dist = agent.policy.get_distribution(th.tensor(obs).float().to(agent.device))
@@ -58,11 +59,12 @@ def main(cfg: str, policy_path: str, deterministic: bool):
                 expert_weight /= total_weight
                 print(f"{expert_id} weight: {round(expert_weight, 5) * 100}")
             progress = 0
-        # print(f"Actions: {actions}")
         obs, rew, done, info = env.step(actions)
-        # print(f"Observation: {obs}")
-        # print(f"Reward: {rew}")
-        # print(f"Info: {info}")
+        if progress % check_info == 0:
+            print(f"Actions: {actions}")
+            # print(f"Observation: {obs}")
+            # print(f"Reward: {rew}")
+            # print(f"Info: {info}")
         
         if done:
             break

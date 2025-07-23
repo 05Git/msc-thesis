@@ -10,6 +10,28 @@ from typing import Union
 from collections import OrderedDict
 
 
+class WhiffPenalty(gym.Wrapper):
+    """
+    Punish a policy for throwing out attacks without hitting the opponent.
+    Requires multi_discrete action space.
+    """
+    def __init__(self, env, whiff_penalty: float = -1e-4):
+        super().__init__(env)
+        assert whiff_penalty < 0
+        self.whiff_penalty = whiff_penalty
+
+    def step(self, action):
+        step_result = self.env.step(action)
+        if len(step_result) == 4:
+            obs, reward, terminated, info = step_result
+            truncated = False
+        else:
+            obs, reward, terminated, truncated, info = step_result
+        if action[1] > 0 and reward == 0:
+            reward += self.whiff_penalty
+        return obs, reward, terminated, truncated, info
+
+
 class MoveBonus(gym.Wrapper):
     """
     Add a small bonus for moving.
@@ -17,6 +39,7 @@ class MoveBonus(gym.Wrapper):
     """
     def __init__(self, env: gym.Env, move_bonus: float = 1e-4):
         super().__init__(env)
+        assert move_bonus > 0
         self.move_bonus = move_bonus
     
     def step(self, action):
@@ -31,6 +54,28 @@ class MoveBonus(gym.Wrapper):
         return obs, reward, terminated, truncated, info
     
 
+class KickBonus(gym.Wrapper):
+    """
+    Add a small bonus for punching.
+    Requires multi_discrete action space.
+    """
+    def __init__(self, env: gym.Env, kick_bonus: float = 1e-4):
+        super().__init__(env)
+        assert kick_bonus > 0
+        self.kick_bonus = kick_bonus
+    
+    def step(self, action):
+        step_result = self.env.step(action)
+        if len(step_result) == 4:
+            obs, reward, terminated, info = step_result
+            truncated = False
+        else:
+            obs, reward, terminated, truncated, info = step_result
+        if action[1] in [4,5,6]:
+            reward += self.kick_bonus
+        return obs, reward, terminated, truncated, info
+    
+
 class PunchBonus(gym.Wrapper):
     """
     Add a small bonus for punching.
@@ -38,6 +83,7 @@ class PunchBonus(gym.Wrapper):
     """
     def __init__(self, env: gym.Env, punch_bonus: float = 1e-4):
         super().__init__(env)
+        assert punch_bonus > 0
         self.punch_bonus = punch_bonus
     
     def step(self, action):
@@ -59,6 +105,7 @@ class JumpBonus(gym.Wrapper):
     """
     def __init__(self, env: gym.Env, jump_bonus: float = 1e-4):
         super().__init__(env)
+        assert jump_bonus > 0
         self.jump_bonus = jump_bonus
     
     def step(self, action):

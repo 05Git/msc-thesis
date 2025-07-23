@@ -105,6 +105,9 @@ def load_settings(cfg: str) -> dict:
         "att_train": cw.AttTrainWrapper,
         "2ptrain": cw.TwoPTrainWrapper,
         "jump_bonus": cw.JumpBonus,
+        "punch_bonus": cw.PunchBonus,
+        "move_bonus": cw.MoveBonus,
+        "whiff_penalty": cw.WhiffPenalty,
     }
     for wrapper in wrappers_settings["wrappers"]:
         assert wrapper[0] in wrapper_aliases.keys()
@@ -176,8 +179,10 @@ def load_settings(cfg: str) -> dict:
 
     if "fusion_settings" in param_keys:
         assert teachers is not None, "Must have a set of expert policies to give to the fusion policy."
+
         if "policy_kwargs" not in policy_settings.keys():
             policy_settings["policy_kwargs"] = dict()
+
         if policy_settings["policy"] == "CnnPolicy":
             # Image obs only
             policy_settings["policy_kwargs"]["features_extractor_class"] = NatureCNN
@@ -186,6 +191,7 @@ def load_settings(cfg: str) -> dict:
             policy_settings["policy_kwargs"]["features_extractor_class"] = CombinedExtractor
         else:
             raise ValueError(f"Policy type must be 'CnnPolicy' or 'MultiInputPolicy'.")
+        
         policy_settings["policy"] = MultiExpertFusionPolicy
         configs.update({"fusion_settings": {
             "experts": teachers,
@@ -198,7 +204,7 @@ def load_settings(cfg: str) -> dict:
             initial_value=distil_settings["policy_settings"]["learning_rate"][0],
             final_value=distil_settings["policy_settings"]["learning_rate"][1]
         )
-        distil_settings["tensorboard_log"] = tensor_board_folder
+        distil_settings["policy_settings"]["tensorboard_log"] = tensor_board_folder
         distil_settings["policy_settings"]["device"] = device
         distil_settings["policy_settings"]["seed"] = misc["seed"]
         configs.update({"distil_settings": distil_settings})

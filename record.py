@@ -82,12 +82,14 @@ def main(
             actions = env.action_space.sample()
             if use_controller:
                 if configs["misc"]["num_players"] == 2:
+                    # Record human trajectory vs dummy opponent
                     actions["agent_0"] = controller.get_actions()
                     actions["agent_1"] = [0, 0]
                 else:
                     actions = controller.get_actions()
             if agent_path:
                 if configs["misc"]["num_players"] == 2:
+                    # Record agent trajectory vs dummy opponent
                     p1_actions, _ = agent.predict(obs, deterministic=deterministic)
                     p2_actions = [0, 0]
                     actions = [np.append(p1_actions, p2_actions)]

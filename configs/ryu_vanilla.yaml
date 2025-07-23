@@ -1,14 +1,14 @@
 folders:
-  parent_dir: final_policies/base_agents
-  model_name: ryu_vanilla
+  parent_dir: whiff_penalty_tests
+  model_name: 5e-3
 
 misc:
   seed: 500
   num_players: 1
   num_train_envs: 8
   num_eval_envs: 4
-  timesteps: 2_000_000
-  model_checkpoint: "2000000"
+  timesteps: 500_000
+  model_checkpoint: "0_autosave_150000"
   n_eval_episodes: 100
 
 policy_settings:
@@ -34,7 +34,7 @@ policy_settings:
 
 callbacks_settings:
   autosave: True
-  check_freq: 500_000
+  check_freq: 50_000
   arcade_metrics: True
 
 env_settings:
@@ -71,4 +71,14 @@ wrappers_settings:
   flatten: True
   wrappers: [
     [pixelobs, {}],
+    # [opp_controller, {
+    #   opp_type: rand
+    # }],
+    # [2ptrain, {}],
+    [whiff_penalty, {
+      whiff_penalty: -5.e-3
+    }],
+    # [move_bonus, {
+    #   move_bonus: 1.e-4
+    # }]
   ]

@@ -1,6 +1,6 @@
 folders:
   parent_dir: fusion_policies
-  model_name: adaptive_weights_state_info_val
+  model_name: adaptive_weights_state_info_val_ent
 
 misc:
   seed: 0
@@ -15,10 +15,12 @@ fusion_settings:
   use_expert_extractors: True
   predict_expert_values: True
   expert_selection_method: adaptive_weights
-  adaptive_weights_kwargs: [expert_value]
+  # fixed_weights: uniform
+  adaptive_weights_kwargs: [expert_value, expert_entropy]
 
 # distil_settings:
-#   distil_type: student
+#   distil_type: ppd
+#   policy_path: fusion_policies/fixed_weights_uniform_ppd/model/seed_0/0_autosave_1500000.zip
 #   policy_settings:
 #     policy: CnnPolicy
 #     gamma: 0.99
@@ -31,6 +33,9 @@ fusion_settings:
 #     use_sde: False
 #     sde_sample_freq: -1
 #     verbose: 1
+#   ppd_settings:
+#     distill_lambda: 0.5
+#     kl_mode: forward
 
 policy_settings:
   policy: CnnPolicy

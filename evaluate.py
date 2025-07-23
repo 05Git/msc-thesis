@@ -1,3 +1,6 @@
+"""
+evaluate.py: Evaluate a policy and return the metrics. 
+"""
 import os
 import json
 import argparse

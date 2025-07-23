@@ -14,7 +14,6 @@ from diambra.arena.stable_baselines3.sb3_utils import AutoSave
 from diambra.arena.stable_baselines3.make_sb3_env import make_sb3_env
 from diambra.arena import SpaceTypes
 from settings import load_settings
-from fusion_policy import MultiExpertFusionPolicy
 
 # diambra run -s _ python train.py --cfg _ --policy_path _ --deterministic
 

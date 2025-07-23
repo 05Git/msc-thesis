@@ -8,7 +8,6 @@ import numpy as np
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import gymnasium as gym
 
 from stable_baselines3 import PPO
 from gymnasium import spaces
@@ -16,6 +15,11 @@ from stable_baselines3.common.utils import obs_as_tensor
 
 
 class RNDPPO(PPO):
+    """
+    Modified version of stable_baselines3's PPO algorithm. Uses random network distillation to try and encourage better exploration.
+    All lines of code which have been added or changed are highlighted with ## MODIFIED ##.
+    Original code available at: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/ppo/ppo.py
+    """
     def __init__(
         self,
         policy,
@@ -210,6 +214,12 @@ class RNDPPO(PPO):
 
 
 class RNDModel(nn.Module):
+    """
+    Random network distillation model. The predictor network tries to predict the output of a static,
+    randomly initialised target network. This helps encourage exploration by using the loss between the networks
+    as an intrinsic reward.
+    Based on code available at: https://github.com/jcwleo/random-network-distillation-pytorch
+    """
     def __init__(
         self,
         image_shape,
