@@ -116,6 +116,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
                     assert kwarg in valid_kwargs, f"Invalid kwarg, must be in: {valid_kwargs}"
                     latent_dim_weights += self.n_experts
             self.adaptive_weights_kwargs = adaptive_weights_kwargs
+            # TODO: Investigate 2-3 additional layers
             self.weights_net = nn.Sequential(
                 nn.Linear(in_features=latent_dim_weights, out_features=self.n_experts, device=self.device),
                 nn.Softmax(dim=-1) # Softmax weights to be between [0,1]
@@ -226,6 +227,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
 
             elif self.expert_selection_method == "adaptive_weights":
                 # Weight expert actions by learnt weights
+                # TODO: Add hard switch baselines
                 latent_weights = latent_pi
                 if self.adaptive_weights_kwargs is not None:
                     # Add extra info to the latent space if specified by kwargs
@@ -368,6 +370,10 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
 
 
 class MultiExpertFusionNet(PPO):
+    """
+    An on-policy algorithm sub-classed from PPO.
+    Extends the train() function to train a MultiExpertFusionPolicy's weights_net using auxiliary loss.
+    """
     def __init__(
         self,
         policy: MultiExpertFusionPolicy,
@@ -388,6 +394,32 @@ class MultiExpertFusionNet(PPO):
     def train(self) -> None:
         super().train()
         if hasattr(self.policy, "weights_net"):
+            assert self.policy.experts is not None, "Must set experts before training weights_net"
             self.policy.weights_net.train()
             for epoch in range(self.weights_net_n_epochs):
-                approx_kl_divs = []
+                for rollout_data in self.rollout_buffer.get(self.batch_size):
+                    actions = rollout_data.actions
+                    if isinstance(self.action_space, gym.spaces.Discrete):
+                        # Convert discrete action from float to long
+                        actions = rollout_data.actions.long().flatten()
+
+                    # Re-sample the noise matrix because the log_std has changed
+                    if self.use_sde:
+                        self.policy.reset_noise(self.batch_size)
+
+                    _, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
+
+                    if entropy is None:
+                    # Approximate entropy when no analytical form
+                        entropy_loss = -th.mean(-log_prob)
+                    else:
+                        entropy_loss = -th.mean(entropy)
+                    
+                    # Reshape back to [n_experts, n_envs, ...] for computing KL-divergence per expert
+                    expert_mean_actions_tensor = expert_mean_actions_tensor.permute(1, 0, *range(2, expert_mean_actions_tensor.ndim))
+                    divergence_weight = 1 / self.n_experts # Weight each expert's divergence uniformally
+                    divergence_loss = th.stack([kl_divergence(expert_actions, actions) * divergence_weight
+                                                for expert_actions in expert_mean_actions_tensor])
+                    if isinstance(self.action_dist, (DiagGaussianDistribution, StateDependentNoiseDistribution)):
+                        divergence_loss = sum_independent_dims(divergence_loss)
+                    divergence_loss = th.mean(divergence_loss)
