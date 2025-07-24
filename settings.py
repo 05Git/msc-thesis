@@ -8,7 +8,7 @@ import custom_wrappers as cw
 
 from stable_baselines3 import PPO
 from RND import RNDPPO
-from FusionNet import MultiExpertFusionPolicy
+from FusionNet import MultiExpertFusionPolicy, MultiExpertFusionNet
 from diambra.arena import EnvironmentSettings, EnvironmentSettingsMultiAgent, WrappersSettings, SpaceTypes, load_settings_flat_dict
 from diambra.arena.stable_baselines3.sb3_utils import linear_schedule
 from stable_baselines3.common.torch_layers import CombinedExtractor, NatureCNN
@@ -191,8 +191,14 @@ def load_settings(cfg: str) -> dict:
             policy_settings["policy_kwargs"]["features_extractor_class"] = CombinedExtractor
         else:
             raise ValueError(f"Policy type must be 'CnnPolicy' or 'MultiInputPolicy'.")
-        
         policy_settings["policy"] = MultiExpertFusionPolicy
+
+        if "fusion_net_settings" in param_keys:
+            agent_type = MultiExpertFusionNet
+            fusion_net_settings: dict = params["fusion_net_settings"] if params["fusion_net_settings"] is not None \
+                                  else dict()
+            policy_settings.update(fusion_net_settings)
+
         configs.update({"fusion_settings": {
             "experts": teachers,
             "expert_params": params["fusion_settings"],

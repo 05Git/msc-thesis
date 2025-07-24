@@ -20,12 +20,12 @@ from stable_baselines3.common.save_util import load_from_zip_file
 from stable_baselines3.common import type_aliases, distributions
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Any, Callable, Optional, Union
-from FusionNet import MultiExpertFusionPolicy
+from FusionNet import MultiExpertFusionPolicy, MultiExpertFusionNet
 
 
 def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load: bool = False):
     """
-    Load a PPO, RNDPPO, or DistilSolver agent.
+    Load a PPO, RNDPPO, or MultiExpertFusionNet agent.
 
     :param settings_config: (dict) Dictionary containing necessary policy settings.
     :param env: (gym.Env) Environment for the agent to interact with.
@@ -37,7 +37,7 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
         policy_path = policy_path + ".zip"
 
     policy_settings: dict = settings_config["policy_settings"]
-    agent_type: PPO | RNDPPO = settings_config["agent_type"]
+    agent_type: PPO | RNDPPO | MultiExpertFusionNet = settings_config["agent_type"]
 
     if os.path.isfile(policy_path):
         print("\nCheckpoint found, loading policy.")
@@ -78,6 +78,10 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
             agent = agent_type.load(path=policy_path, env=env, **policy_settings)
     elif not force_load:
         agent = agent_type(env=env, **policy_settings)
+        if "fusion_settings" in settings_config.keys():
+            fusion_settings: dict = settings_config["fusion_settings"]
+            agent.policy.set_experts(fusion_settings["experts"])
+            agent.policy.set_expert_params(**fusion_settings["expert_params"])
     else:
         raise Exception("\nInvalid checkpoint, please check policy path provided.")
 

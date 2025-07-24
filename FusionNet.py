@@ -1,11 +1,12 @@
 import gymnasium as gym
 import torch as th
 import torch.nn as nn
+import numpy as np
 
-from typing import Optional, Tuple, Callable, Union
+from typing import Optional, Tuple, Callable, Union, TypeVar
 from stable_baselines3 import PPO
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
-from stable_baselines3.common.type_aliases import PyTorchObs, GymEnv
+from stable_baselines3.common.type_aliases import PyTorchObs, GymEnv, MaybeCallback
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.distributions import (
     BernoulliDistribution,
@@ -75,9 +76,6 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         expert_selection_method: Optional[str] = "dummy",
         fixed_weights: Optional[list[float]] = None,
         adaptive_weights_kwargs: Optional[list[str]] = None, # expert-student gaps, values, entropies
-        adaptive_weights_ent_coef: Optional[float] = 0.,
-        adaptive_weights_aux_loss_term: Optional[float] = 0.5,
-        total_timesteps: Optional[int] = 1_000_000,
         adaptive_weights_optimizer_kwargs: Optional[dict] = {},
     ) -> None:
         """
@@ -121,11 +119,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
                 nn.Linear(in_features=latent_dim_weights, out_features=self.n_experts, device=self.device),
                 nn.Softmax(dim=-1) # Softmax weights to be between [0,1]
             )
-            self.adaptive_weights_ent_coef = adaptive_weights_ent_coef
-            self.weights_net_aux_loss_term = adaptive_weights_aux_loss_term
-            self._weights_net_total_timesteps = total_timesteps # Track timesteps for annealing divergence coef
-            self._weights_net_num_timesteps = 0
-            # TODO: Test only using this optim to train weights_net, don't use PPO loss at all.
+            # weights_net specific optim used to calculate auxiliary loss, if required
             self.weights_net_optimizer = th.optim.Adam(
                 params=self.weights_net.parameters(),
                 **adaptive_weights_optimizer_kwargs
@@ -138,8 +132,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         """
         ############################# MODIFIED #############################
         values = self.predict_values(obs)
-        pi_features = self.extract_features(obs, self.pi_features_extractor)
-        latent_pi = self.mlp_extractor.forward_actor(pi_features)
+        latent_pi = self.extract_latent_features(obs, network="pi")
         distribution = self._get_action_dist_from_latent(latent_pi, obs=obs)
         ####################################################################
         actions = distribution.get_actions(deterministic=deterministic)
@@ -270,39 +263,6 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
             return self.action_dist.proba_distribution(expert_mean_actions_tensor, self.log_std, latent_pi) # NOTE: Might want to investigate using experts' latent_pi if possible
         else:
             raise ValueError("Invalid action distribution")
-
-    def compute_weights_net_auxiliary_loss(self, action_dist: Distribution, obs: PyTorchObs) -> None:
-        # Calculate auxiliary loss for weights_net
-        # The idea's there, just need to implement in a PPO subclass
-        actions = action_dist.get_actions(deterministic=True)
-        _, log_prob, entropy = self.evaluate_actions(obs=obs, actions=actions)
-        if entropy is None:
-            entropy = -th.mean(log_prob)
-        else:
-            entropy = -th.mean(entropy)
-
-        # Reshape back to [n_experts, n_envs, ...] for computing KL-divergence per expert
-        expert_mean_actions_tensor = expert_mean_actions_tensor.permute(1, 0, *range(2, expert_mean_actions_tensor.ndim))
-        divergence_weight = 1 / self.n_experts # Weight each expert's divergence uniformally
-        divergence_loss = th.stack([kl_divergence(expert_actions, actions) * divergence_weight
-                                    for expert_actions in expert_mean_actions_tensor])
-        if isinstance(self.action_dist, (DiagGaussianDistribution, StateDependentNoiseDistribution)):
-            divergence_loss = sum_independent_dims(divergence_loss)
-        divergence_loss = th.mean(divergence_loss)
-        
-        div_coef = 1 - (self._weights_net_num_timesteps / self._weights_net_total_timesteps) # Anneal by progress
-        weights_net_auxiliary_loss = divergence_loss * div_coef + entropy * self.adaptive_weights_ent_coef
-        weights_net_auxiliary_loss = weights_net_auxiliary_loss * self.weights_net_aux_loss_term
-        self.weights_net_optimizer.zero_grad()
-        weights_net_auxiliary_loss.backward()
-        self.weights_net_optimizer.step()
-
-        if self._weights_net_num_timesteps < self._weights_net_total_timesteps:
-            # Increment progress by batch size
-            self._weights_net_num_timesteps += obs.shape[0]
-            if self._weights_net_num_timesteps > self._weights_net_total_timesteps:
-                # Check in case it exceeds total timesteps accidentally
-                self._weights_net_num_timesteps = self._weights_net_total_timesteps
         
     # MODIFIED: Get the expert selection rates' current values, then reset them. Used for logging metrics.
     def get_expert_selection_rates(self) -> th.Tensor:
@@ -321,8 +281,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         """
         ############################# MODIFIED #############################
         values = self.predict_values(obs)
-        pi_features = self.extract_features(obs, self.pi_features_extractor)
-        latent_pi = self.mlp_extractor.forward_actor(pi_features)
+        latent_pi = self.extract_latent_features(obs, network="pi")
         distribution = self._get_action_dist_from_latent(latent_pi, obs=obs)
         ####################################################################
         log_prob = distribution.log_prob(actions)
@@ -333,9 +292,20 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         """
         Returns a distribution built from a combination of expert policies.
         """
-        features = super().extract_features(obs, self.pi_features_extractor)
-        latent_pi = self.mlp_extractor.forward_actor(features)
+        latent_pi = self.extract_latent_features(obs, network="pi")
         return self._get_action_dist_from_latent(latent_pi, obs=obs) # MODIFIED: Includes observation data
+    
+    def extract_latent_features(self, obs: PyTorchObs, network: str = "pi") -> th.Tensor:
+        """
+        Extract latent features vector. Primarily used as helper function during auxiliary loss calculations.
+        """
+        assert network in ["pi", "vf"]
+        if network == "pi":
+            features = super().extract_features(obs, self.pi_features_extractor)
+            return self.mlp_extractor.forward_actor(features)
+        else:
+            features = super().extract_features(obs, self.vf_features_extractor)
+            return self.mlp_extractor.forward_critic(features)        
     
     def predict_values(self, obs: PyTorchObs) -> th.Tensor:
         """
@@ -343,8 +313,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         """
         ############################################## MODIFIED ###################################################
         if not self.predict_expert_values:
-            features = super().extract_features(obs, self.vf_features_extractor)
-            latent_vf = self.mlp_extractor.forward_critic(features)
+            latent_vf = self.extract_latent_features(obs, network="vf")
             return self.value_net(latent_vf)
         
         assert self.experts is not None, "Must set experts before calling them to evaluate state values."
@@ -369,6 +338,8 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         ]
 
 
+SelfFusionNet = TypeVar("SelfFusionNet", bound="MultiExpertFusionNet")
+
 class MultiExpertFusionNet(PPO):
     """
     An on-policy algorithm sub-classed from PPO.
@@ -378,48 +349,98 @@ class MultiExpertFusionNet(PPO):
         self,
         policy: MultiExpertFusionPolicy,
         env: Union[GymEnv, str],
-        weights_net_n_epochs: int = 128,
+        auxiliary_loss_coef: float = 1.,
+        weights_net_n_epochs: int = None,
+        max_weights_net_grad_norm: float = None,
         *args,
         **kwargs,
     ):
-        assert isinstance(policy, MultiExpertFusionPolicy)
         super().__init__(
             policy,
             env,
             *args,
             **kwargs
         )
-        self.weights_net_n_epochs = weights_net_n_epochs
+        assert isinstance(self.policy, MultiExpertFusionPolicy)
+        assert auxiliary_loss_coef >= 0 and auxiliary_loss_coef <= 1
+        self.auxiliary_loss_coef = auxiliary_loss_coef
+
+        if weights_net_n_epochs is None:
+            self.weights_net_n_epochs = self.n_epochs
+        else:
+            assert weights_net_n_epochs > 0
+            self.weights_net_n_epochs = weights_net_n_epochs
+
+        if max_weights_net_grad_norm is None:
+            self.max_weights_net_grad_norm = self.max_grad_norm
+        else:
+            assert max_weights_net_grad_norm > 0
+            self.max_weights_net_grad_norm = max_weights_net_grad_norm
 
     def train(self) -> None:
+        """
+        After calling the base PPO train loop, calculate weights_net auxiliary loss.
+        """
         super().train()
         if hasattr(self.policy, "weights_net"):
             assert self.policy.experts is not None, "Must set experts before training weights_net"
             self.policy.weights_net.train()
-            for epoch in range(self.weights_net_n_epochs):
+            divergence_losses = []
+            for _ in range(self.weights_net_n_epochs):
                 for rollout_data in self.rollout_buffer.get(self.batch_size):
-                    actions = rollout_data.actions
-                    if isinstance(self.action_space, gym.spaces.Discrete):
-                        # Convert discrete action from float to long
-                        actions = rollout_data.actions.long().flatten()
+                    observations = rollout_data.observations
 
-                    # Re-sample the noise matrix because the log_std has changed
-                    if self.use_sde:
-                        self.policy.reset_noise(self.batch_size)
+                    # Get distributions from each expert and the fusion policy
+                    expert_dists = [
+                        expert_net.policy.get_distribution(observations)
+                        for expert_net in self.policy.experts.values()
+                    ]
+                    fusion_dist = self.policy.get_distribution(observations)
 
-                    _, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
-
-                    if entropy is None:
-                    # Approximate entropy when no analytical form
-                        entropy_loss = -th.mean(-log_prob)
-                    else:
-                        entropy_loss = -th.mean(entropy)
+                    # Calculate divergence between each expert's distribution and the fused distribution
+                    divergence_weight = 1 / self.policy.n_experts # Weight each expert's divergence uniformally
+                    divergence_loss = th.stack([
+                        kl_divergence(expert_dist, fusion_dist) * divergence_weight
+                        for expert_dist in expert_dists
+                    ])
                     
-                    # Reshape back to [n_experts, n_envs, ...] for computing KL-divergence per expert
-                    expert_mean_actions_tensor = expert_mean_actions_tensor.permute(1, 0, *range(2, expert_mean_actions_tensor.ndim))
-                    divergence_weight = 1 / self.n_experts # Weight each expert's divergence uniformally
-                    divergence_loss = th.stack([kl_divergence(expert_actions, actions) * divergence_weight
-                                                for expert_actions in expert_mean_actions_tensor])
-                    if isinstance(self.action_dist, (DiagGaussianDistribution, StateDependentNoiseDistribution)):
-                        divergence_loss = sum_independent_dims(divergence_loss)
+                    if isinstance(self.policy.action_dist, (DiagGaussianDistribution, StateDependentNoiseDistribution)):
+                        divergence_loss = th.stack([
+                            sum_independent_dims(expert_div_loss)
+                            for expert_div_loss in divergence_loss
+                        ])
                     divergence_loss = th.mean(divergence_loss)
+                    divergence_losses.append(divergence_loss.item())
+
+                    weights_net_div_coef = 1.
+                    # weights_net_div_coef = self._current_progress_remaining # Anneal by progress TODO: Add separate timescale for annealing
+                    weights_net_auxiliary_loss = divergence_loss * weights_net_div_coef
+                    weights_net_auxiliary_loss = weights_net_auxiliary_loss * self.auxiliary_loss_coef
+
+                    self.policy.weights_net_optimizer.zero_grad()
+                    weights_net_auxiliary_loss.backward()
+                    th.nn.utils.clip_grad_norm_(
+                        self.policy.weights_net.parameters(),
+                        self.max_weights_net_grad_norm
+                    )
+                    self.policy.weights_net_optimizer.step()
+            
+            self.logger.record("weights_net/divergence_loss", np.mean(divergence_losses))
+
+    def learn(
+        self: SelfFusionNet,
+        total_timesteps: int,
+        callback: MaybeCallback = None,
+        log_interval: int = 1,
+        tb_log_name: str = "MultiExpertFusionNet",
+        reset_num_timesteps: bool = True,
+        progress_bar: bool = False,
+    ) -> SelfFusionNet:
+        return super().learn(
+            total_timesteps=total_timesteps,
+            callback=callback,
+            log_interval=log_interval,
+            tb_log_name=tb_log_name,
+            reset_num_timesteps=reset_num_timesteps,
+            progress_bar=progress_bar,
+        )

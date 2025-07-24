@@ -1,13 +1,13 @@
 folders:
   parent_dir: fusion_policies
-  model_name: adaptive_weights_state_info_val_ent
+  model_name: test_aux_loss
 
 misc:
   seed: 0
   num_players: 1
   num_train_envs: 8
   num_eval_envs: 4
-  timesteps: 2_000_000
+  timesteps: 3000
   model_checkpoint: "0"
   n_eval_episodes: 100
 
@@ -16,7 +16,7 @@ fusion_settings:
   predict_expert_values: True
   expert_selection_method: adaptive_weights
   # fixed_weights: uniform
-  adaptive_weights_kwargs: [expert_value, expert_entropy]
+  # adaptive_weights_kwargs: [expert_value, expert_entropy]
 
 # distil_settings:
 #   distil_type: ppd
@@ -57,6 +57,11 @@ policy_settings:
   normalize_advantage: True
   stats_window_size: 100
   verbose: 1
+
+fusion_net_settings:
+  # weights_net_n_epochs: 128
+  # auxiliary_loss_coef: 1.
+  # max_weights_net_grad_norm: 0.5
 
 teachers:
   antiair_teacher: experts/from_scratch/antiair/model/seed_0/500000.zip
