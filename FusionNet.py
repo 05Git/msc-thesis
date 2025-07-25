@@ -8,6 +8,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.type_aliases import PyTorchObs, GymEnv, MaybeCallback
 from stable_baselines3.common.policies import ActorCriticPolicy
+from stable_baselines3.common.utils import get_linear_fn
 from stable_baselines3.common.distributions import (
     BernoulliDistribution,
     CategoricalDistribution,
@@ -90,40 +91,41 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
             "entropy",
             "random",
             "fixed_weights",
-            "adaptive_weights",
+            "hard_weights",
+            "soft_weights",
         ]
         assert expert_selection_method in self.valid_selection_options, \
             f"""Invalid input for 'expert_selection_method': ({expert_selection_method}).
             \nValid options: {self.valid_selection_options}."""
         self.expert_selection_method = expert_selection_method
 
-        if self.expert_selection_method == "fixed_weights":
-            assert sum(fixed_weights) == 1 and len(fixed_weights) == self.n_experts
-            self.fixed_weights = fixed_weights
-        elif self.expert_selection_method == "adaptive_weights":
-            # Use size of extracted features dim as input size (+ additional space if using extra info)
-            # NOTE: Could add a build function for modularizing + experimenting with architecture
-            latent_dim_weights = self.features_dim
-            if adaptive_weights_kwargs is not None:
-                valid_kwargs = [
-                    "expert_student_gap",
-                    "expert_value",
-                    "expert_entropy",
-                ]
-                for kwarg in adaptive_weights_kwargs:
-                    assert kwarg in valid_kwargs, f"Invalid kwarg, must be in: {valid_kwargs}"
-                    latent_dim_weights += self.n_experts
-            self.adaptive_weights_kwargs = adaptive_weights_kwargs
-            # TODO: Investigate 2-3 additional layers
-            self.weights_net = nn.Sequential(
-                nn.Linear(in_features=latent_dim_weights, out_features=self.n_experts, device=self.device),
-                nn.Softmax(dim=-1) # Softmax weights to be between [0,1]
-            )
-            # weights_net specific optim used to calculate auxiliary loss, if required
-            self.weights_net_optimizer = th.optim.Adam(
-                params=self.weights_net.parameters(),
-                **adaptive_weights_optimizer_kwargs
-            )
+        if "weights" in self.expert_selection_method:
+            if "fixed" in self.expert_selection_method:
+                assert sum(fixed_weights) == 1 and len(fixed_weights) == self.n_experts
+                self.fixed_weights = fixed_weights
+            else:
+                # Use size of extracted features dim as input size (+ additional space if using extra info)
+                # NOTE: Could add a build function for modularizing + experimenting with architecture
+                latent_dim_weights = self.features_dim
+                if adaptive_weights_kwargs is not None:
+                    valid_kwargs = [
+                        "expert_value",
+                        "expert_entropy",
+                    ]
+                    for kwarg in adaptive_weights_kwargs:
+                        assert kwarg in valid_kwargs, f"Invalid kwarg, must be in: {valid_kwargs}"
+                        latent_dim_weights += self.n_experts
+                self.adaptive_weights_kwargs = adaptive_weights_kwargs
+                # TODO: Investigate 2-3 additional layers
+                self.weights_net = nn.Sequential(
+                    nn.Linear(in_features=latent_dim_weights, out_features=self.n_experts, device=self.device),
+                    nn.Softmax(dim=-1) # Softmax weights to be between [0,1]
+                )
+                # weights_net specific optim used to calculate auxiliary loss, if required
+                self.weights_net_optimizer = th.optim.Adam(
+                    params=self.weights_net.parameters(),
+                    **adaptive_weights_optimizer_kwargs
+                )
 
     def forward(self, obs, deterministic = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
@@ -213,25 +215,29 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
                 action_weights = th.zeros((obs.shape[0], self.n_experts), device=self.device)
                 for action_idx, chosen_idx in enumerate(chosen_indices):
                     action_weights[action_idx][chosen_idx] = 1
-
-            elif self.expert_selection_method == "fixed_weights":
-                # Weight expert actions by pre-chosen values
-                action_weights = th.tensor(self.fixed_weights, device=self.device).repeat(obs.shape[0], 1)
-
-            elif self.expert_selection_method == "adaptive_weights":
-                # Weight expert actions by learnt weights
-                # TODO: Add hard switch baselines
-                latent_weights = latent_pi
-                if self.adaptive_weights_kwargs is not None:
-                    # Add extra info to the latent space if specified by kwargs
-                    for kwarg in self.adaptive_weights_kwargs:
-                        if kwarg == "expert_value":
-                            reshaped_values = th.stack(expert_values, dim=1) # Stack along n_envs dimension (dim 1) to match latent_weights
-                            latent_weights = th.cat((latent_weights, reshaped_values), dim=1)
-                        elif kwarg == "expert_entropy":
-                            reshaped_entropies = th.stack(expert_entropies, dim=1)
-                            latent_weights = th.cat((latent_weights, reshaped_entropies), dim=1)
-                action_weights = self.weights_net(latent_weights)
+            
+            elif "weights" in self.expert_selection_method:
+                if "fixed" in self.expert_selection_method:
+                    # Weight expert actions by pre-chosen values
+                    action_weights = th.tensor(self.fixed_weights, device=self.device).repeat(obs.shape[0], 1)
+                else:
+                    # Weight expert actions by learnt weights
+                    latent_weights = latent_pi
+                    if self.adaptive_weights_kwargs is not None:
+                        # Add extra info to the latent space if specified by kwargs
+                        for kwarg in self.adaptive_weights_kwargs:
+                            if kwarg == "expert_value":
+                                reshaped_values = th.stack(expert_values, dim=1) # Stack along n_envs dimension (dim 1) to match latent_weights
+                                latent_weights = th.cat((latent_weights, reshaped_values), dim=1)
+                            elif kwarg == "expert_entropy":
+                                reshaped_entropies = th.stack(expert_entropies, dim=1)
+                                latent_weights = th.cat((latent_weights, reshaped_entropies), dim=1)
+                    action_weights = self.weights_net(latent_weights)
+                    if "hard" in self.expert_selection_method:
+                        action_weights_indices = th.argmax(action_weights, dim=1)
+                        for idx, weights in enumerate(action_weights):
+                            weights = th.zeros_like(weights, device=self.device)
+                            weights[action_weights_indices[idx]] = 1
                 
             else:
                 raise ValueError(f"""Invalid value ({self.expert_selection_method}) for 'expert_selection_method'.
@@ -270,7 +276,12 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
         Return the selection rate of each expert for metric logging.
         """
         selection_rates = self.expert_selection_rate.copy()
+        total_weight = sum(self.expert_selection_rate.values())
+        if total_weight == 0:
+            # In case this gets called by a dummy policy
+            total_weight += 1e-8
         for expert_id in self.expert_selection_rate.keys():
+            selection_rates[expert_id] /= total_weight
             self.expert_selection_rate[expert_id] = 0
         return selection_rates
 
@@ -350,6 +361,9 @@ class MultiExpertFusionNet(PPO):
         policy: MultiExpertFusionPolicy,
         env: Union[GymEnv, str],
         auxiliary_loss_coef: float = 1.,
+        div_loss_coef_init: float = 1.,
+        div_loss_coef_end: float = 0.,
+        div_loss_coef_fraction: float = 0.9,
         weights_net_n_epochs: int = None,
         max_weights_net_grad_norm: float = None,
         *args,
@@ -364,6 +378,19 @@ class MultiExpertFusionNet(PPO):
         assert isinstance(self.policy, MultiExpertFusionPolicy)
         assert auxiliary_loss_coef >= 0 and auxiliary_loss_coef <= 1
         self.auxiliary_loss_coef = auxiliary_loss_coef
+        
+        assert div_loss_coef_init <= 1
+        assert div_loss_coef_init >= div_loss_coef_end
+        assert div_loss_coef_end >= 0
+        assert div_loss_coef_fraction > 0 and div_loss_coef_fraction <= 1
+        self.div_loss_coef_init = div_loss_coef_init
+        self.div_loss_coef_end = div_loss_coef_end
+        self.div_loss_coef_fraction = div_loss_coef_fraction
+        self.div_loss_schedule = get_linear_fn(
+            self.div_loss_coef_init,
+            self.div_loss_coef_end,
+            self.div_loss_coef_fraction
+        )
 
         if weights_net_n_epochs is None:
             self.weights_net_n_epochs = self.n_epochs
@@ -386,6 +413,9 @@ class MultiExpertFusionNet(PPO):
             assert self.policy.experts is not None, "Must set experts before training weights_net"
             self.policy.weights_net.train()
             divergence_losses = []
+            auxiliary_losses = []
+            div_loss_coef = self.div_loss_schedule(self._current_progress_remaining)
+            self.logger.record("weights_net/div_loss_coef", div_loss_coef)
             for _ in range(self.weights_net_n_epochs):
                 for rollout_data in self.rollout_buffer.get(self.batch_size):
                     observations = rollout_data.observations
@@ -412,20 +442,19 @@ class MultiExpertFusionNet(PPO):
                     divergence_loss = th.mean(divergence_loss)
                     divergence_losses.append(divergence_loss.item())
 
-                    weights_net_div_coef = 1.
-                    # weights_net_div_coef = self._current_progress_remaining # Anneal by progress TODO: Add separate timescale for annealing
-                    weights_net_auxiliary_loss = divergence_loss * weights_net_div_coef
-                    weights_net_auxiliary_loss = weights_net_auxiliary_loss * self.auxiliary_loss_coef
+                    weights_net_auxiliary_loss = (divergence_loss * div_loss_coef) * self.auxiliary_loss_coef
+                    auxiliary_losses.append(weights_net_auxiliary_loss.item())
 
                     self.policy.weights_net_optimizer.zero_grad()
                     weights_net_auxiliary_loss.backward()
-                    th.nn.utils.clip_grad_norm_(
+                    nn.utils.clip_grad_norm_(
                         self.policy.weights_net.parameters(),
                         self.max_weights_net_grad_norm
                     )
                     self.policy.weights_net_optimizer.step()
             
             self.logger.record("weights_net/divergence_loss", np.mean(divergence_losses))
+            self.logger.record("weights_net/auxiliary_loss", np.mean(auxiliary_losses))
 
     def learn(
         self: SelfFusionNet,

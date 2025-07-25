@@ -32,13 +32,7 @@ class ExpertSelectionCallback(BaseCallback):
                 expert_selection_rate: dict = self.model.teacher_model.policy.get_expert_selection_rates()
                 if self.verbose > 0:
                     print("Expert selection rates:")
-                for expert_id in expert_selection_rate.keys():
-                    if self.model.teacher_model.policy.expert_selection_method == "adaptive_weights" \
-                        or self.model.teacher_model.policy.expert_selection_method == "fixed_weights":
-                        total_weight = sum(expert_selection_rate.values())
-                        selection_rate = expert_selection_rate[expert_id] / total_weight
-                    else:
-                        selection_rate = expert_selection_rate[expert_id] / self.log_rate
+                for expert_id, selection_rate in expert_selection_rate.items():
                     self.logger.record(f"experts/{expert_id}_selection_rate", round(selection_rate, 5) * 100)
                     if self.verbose > 0:
                         print(f"{expert_id} selection rate: {round(selection_rate, 5) * 100}%")
@@ -47,13 +41,7 @@ class ExpertSelectionCallback(BaseCallback):
                 expert_selection_rate: dict = self.model.policy.get_expert_selection_rates()
                 if self.verbose > 0:
                     print("Expert selection rates:")
-                for expert_id in expert_selection_rate.keys():
-                    if self.model.policy.expert_selection_method == "adaptive_weights" \
-                        or self.model.policy.expert_selection_method == "fixed_weights":
-                        total_weight = sum(expert_selection_rate.values())
-                        selection_rate = expert_selection_rate[expert_id] / total_weight
-                    else:
-                        selection_rate = expert_selection_rate[expert_id] / self.log_rate
+                for expert_id, selection_rate in expert_selection_rate.items():
                     self.logger.record(f"experts/{expert_id}_selection_rate", round(selection_rate, 5) * 100)
                     if self.verbose > 0:
                         print(f"{expert_id} selection rate: {round(selection_rate, 5) * 100}%")
@@ -64,6 +52,9 @@ class ExpertSelectionCallback(BaseCallback):
 
 
 class WeightsNetLossTracker(BaseCallback):
+    """
+    Track the loss of weights_net parameters.
+    """
     def __init__(self, verbose = 0):
         super().__init__(verbose)
 

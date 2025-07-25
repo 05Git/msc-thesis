@@ -58,12 +58,6 @@ policy_settings:
   stats_window_size: 100
   verbose: 1
 
-fusion_net_settings:
-  # weights_net_n_epochs: 128
-  # max_weights_net_grad_norm: 0.5
-  auxiliary_loss_coef: 0.1 # Experiment: 1, 0.75, 0.5, 0.1, 0.01
-  div_loss_coef_fraction: 0.3 # experiments: 0.9, 0.75, 0.5
-
 teachers:
   antiair_teacher: experts/from_scratch/antiair/model/seed_0/500000.zip
   attack_teacher: experts/from_scratch/attack_rand/model/seed_0/500000.zip
