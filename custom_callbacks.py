@@ -176,7 +176,6 @@ class UniqueActionsCallback(BaseCallback):
         return True
 
 
-
 class ArcadeMetricsEvalCallback(EventCallback):
     """
     Extended EvalCallback to include custom arcade metrics. All lines of code which have been changed or added are marked with ## MODIFIED ##.

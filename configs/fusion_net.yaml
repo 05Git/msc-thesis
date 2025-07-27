@@ -1,6 +1,6 @@
 folders:
   parent_dir: final_fusion_policies
-  model_name: soft_weights_state_info_val
+  model_name: soft_weights_kl_frac_0-3
 
 misc:
   seed: 0
@@ -16,7 +16,7 @@ fusion_settings:
   predict_expert_values: True
   expert_selection_method: soft_weights
   # fixed_weights: uniform
-  adaptive_weights_kwargs: [expert_value]
+  # adaptive_weights_kwargs: [expert_value]
 
 # distil_settings:
 #   distil_type: ppd

@@ -235,9 +235,9 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
                     action_weights = self.weights_net(latent_weights)
                     if "hard" in self.expert_selection_method:
                         action_weights_indices = th.argmax(action_weights, dim=1)
-                        for idx, weights in enumerate(action_weights):
-                            weights = th.zeros_like(weights, device=self.device)
-                            weights[action_weights_indices[idx]] = 1
+                        action_weights = th.zeros((obs.shape[0], self.n_experts), device=self.device)
+                        for action_idx, chosen_idx in enumerate(action_weights_indices):
+                            action_weights[action_idx][chosen_idx] = 1
                 
             else:
                 raise ValueError(f"""Invalid value ({self.expert_selection_method}) for 'expert_selection_method'.

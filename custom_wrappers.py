@@ -246,7 +246,28 @@ class PixelObsWrapper(gym.ObservationWrapper):
     
     def observation(self, observation):
         return observation["frame"]
-    
+
+
+class TrackLastActions(gym.Wrapper):
+    """
+    Keep track of last actions without adding to observations.
+    """
+    def __init__(self, env: gym.Env, action_history_len: int = 6):
+        super().__init__(env)
+        self.last_actions = np.array([np.zeros_like(env.action_space.shape[0], dtype=np.uint8)] * action_history_len)
+
+    def step(self, action):
+        step_result = self.env.step(action)
+        if len(step_result) == 4:
+            obs, reward, terminated, info = step_result
+            truncated = False
+        else:
+            obs, reward, terminated, truncated, info = step_result
+        self.last_actions = self.last_actions[1:]
+        self.last_actions = np.concatenate((self.last_actions, [action]))
+        info["last_actions"] = self.last_actions
+        return obs, reward, terminated, truncated, info
+
 
 class AddLastActions(gym.Wrapper):
     """
