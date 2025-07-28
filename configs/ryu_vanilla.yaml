@@ -1,23 +1,23 @@
 folders:
-  parent_dir: vanilla_policies
-  model_name: rwd_1_whiff_penalty_2-5e-3_ent_coef_0-01_5M_steps
+  parent_dir: base_policies
+  model_name: sequential
 
 misc:
   seed: 0
   num_players: 1
   num_train_envs: 8
   num_eval_envs: 4
-  timesteps: 5_000_000
-  model_checkpoint: "0"
+  timesteps: 500_000
+  model_checkpoint: "1500000"
   n_eval_episodes: 100
 
 policy_settings:
   policy: CnnPolicy
   gamma: 0.99
-  learning_rate: [2.5e-5, 2.5e-6]
-  clip_range: [0.15, 0.025]
-  # learning_rate: [5.0e-5, 2.5e-6] # Finetuning
-  # clip_range: [0.075, 0.025]      # Finetuning
+  # learning_rate: [2.5e-5, 2.5e-6]
+  # clip_range: [0.15, 0.025]
+  learning_rate: [5.0e-5, 2.5e-6] # Finetuning
+  clip_range: [0.075, 0.025]      # Finetuning
   n_epochs: 10
   n_steps: 128
   batch_size: 1024 # batch_size % num_envs should equal 0
@@ -71,14 +71,4 @@ wrappers_settings:
   flatten: True
   wrappers: [
     [pixelobs, {}],
-    # [opp_controller, {
-    #   opp_type: rand
-    # }],
-    # [2ptrain, {}],
-    [whiff_penalty, {
-      whiff_penalty: -2.5e-3
-    }],
-    # [move_bonus, {
-    #   move_bonus: 1.e-4
-    # }]
   ]

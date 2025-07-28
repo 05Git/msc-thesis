@@ -42,6 +42,10 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
     if os.path.isfile(policy_path):
         print("\nCheckpoint found, loading policy.")
         if "fusion_settings" in settings_config.keys():
+            if "custom_objects" in policy_settings.keys():
+                custom_objects = policy_settings.pop("custom_objects")
+            else:
+                custom_objects = dict()
             agent = agent_type(env=env, **policy_settings)
             assert isinstance(agent.policy, MultiExpertFusionPolicy)
 
@@ -65,7 +69,7 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
                 _, params, _ = load_from_zip_file(
                     policy_path,
                     device=policy_settings["device"],
-                    custom_objects=policy_settings["custom_objects"] if "custom_objects" in policy_settings.keys() else None,
+                    custom_objects=custom_objects,
                     print_system_info=True,
                 )
                 try:
@@ -73,10 +77,13 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
                 except RuntimeError as e:
                     raise e
             else:
-                agent.load(policy_path)
+                agent.load(policy_path, custom_objects=custom_objects)
         else:
             agent = agent_type.load(path=policy_path, env=env, **policy_settings)
     elif not force_load:
+        if "custom_objects" in policy_settings.keys():
+            custom_objects = policy_settings.pop("custom_objects")
+            del custom_objects
         agent = agent_type(env=env, **policy_settings)
         if "fusion_settings" in settings_config.keys():
             fusion_settings: dict = settings_config["fusion_settings"]
@@ -116,9 +123,11 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
         
         # Check for specific PPD settings
         # TODO: Test if this check is necessary
+        for param in agent.policy.parameters():
+            param.requires_grad = False # Don't think this is absolutely necessary, but leaving it here just in case
         if student_type == ProximalPolicyDistillation:
             if "ppd_settings" not in distil_settings.keys():
-                distil_settings["ppd_settings"] = {}
+                distil_settings["ppd_settings"] = dict()
             student.set_teacher(agent, **distil_settings["ppd_settings"])
         else:
             student.set_teacher(agent)
@@ -288,9 +297,12 @@ def evaluate_policy_with_arcade_metrics(
     current_stages_completed = np.zeros(n_envs, dtype=np.float64)
     current_arcade_runs_completed = np.zeros(n_envs, dtype=np.float64)
     student_teacher_divergences = {}
+    teacher_act_counts = dict()
+    total_act_counts = np.zeros((env.action_space.shape[0], 1))
     if teachers is not None:
-        for id in teachers.keys():
-            student_teacher_divergences.update({id: []})
+        for t_id in teachers.keys():
+            student_teacher_divergences.update({t_id: []})
+            teacher_act_counts.update({t_id: np.zeros((env.action_space.shape[0], 1))})
     #############################################################################
 
     with th.no_grad():
@@ -320,6 +332,9 @@ def evaluate_policy_with_arcade_metrics(
                         kl_div = distributions.sum_independent_dims(kl_div)
                     kl_div = th.mean(kl_div).cpu().detach().numpy().tolist()
                     student_teacher_divergences[id].append(kl_div)
+                
+                t_acts = {t_id: t_net.predict(observations, deterministic=deterministic)[0]
+                        for t_id, t_net in teachers.items()}                
             ################################################################################################
 
             for i in range(n_envs):
@@ -334,6 +349,15 @@ def evaluate_policy_with_arcade_metrics(
                         callback(locals(), globals())
                     
                     ############################### MODIFIED ##########################
+                    if teachers is not None:
+                        for t_id in teachers.keys():
+                            for a_idx in range(actions[i].shape[0]):
+                                t_act = t_acts[t_id][i, a_idx]
+                                s_act = actions[i, a_idx]
+                                if t_act == s_act:
+                                    teacher_act_counts[t_id][a_idx, 0] += 1
+                        total_act_counts[:, 0] += 1
+                    
                     if info["stage_done"]:
                         current_stages_completed[i] += 1
                         # Increment evey time the final stage is successfully completed
@@ -382,6 +406,27 @@ def evaluate_policy_with_arcade_metrics(
     std_arcade_runs = np.std(arcade_runs_completed)
     avg_kl_divs = {id: np.mean(kl_div) for id, kl_div in student_teacher_divergences.items()}
     std_kl_divs = {id: np.std(kl_div) for id, kl_div in student_teacher_divergences.items()}
+
+    # Bernoulli mean and std
+    teacher_act_means = dict()
+    teacher_act_stds = dict()
+    if teachers is not None:
+        teacher_act_means.update({
+            teacher_id: teacher_act_counts[teacher_id] / total_act_counts
+            for teacher_id in teachers.keys()
+        })
+        teacher_act_stds.update({
+            teacher_id: np.sqrt(
+                (teacher_act_means[teacher_id] * (1 - teacher_act_means[teacher_id])) / total_act_counts
+            )
+            for teacher_id in teachers.keys()
+        })
+        
+        # Preprocess to lists for saving to json
+        for teacher_id in teachers.keys():
+            teacher_act_counts[teacher_id] = teacher_act_counts[teacher_id].tolist()
+            teacher_act_means[teacher_id] = teacher_act_means[teacher_id].tolist()
+            teacher_act_stds[teacher_id] = teacher_act_stds[teacher_id].tolist()
     #########################################################################################
 
     if reward_threshold is not None:
@@ -389,21 +434,25 @@ def evaluate_policy_with_arcade_metrics(
     
     if return_episode_rewards:
     #################################################### MODIFIED ###############################################################
-        return episode_rewards, episode_lengths, stages_completed, arcade_runs_completed, student_teacher_divergences
-    return (mean_reward, std_reward), (mean_stages, std_stages), (mean_arcade_runs, std_arcade_runs), (avg_kl_divs, std_kl_divs)
+        return episode_rewards, episode_lengths, stages_completed, arcade_runs_completed, \
+            student_teacher_divergences, teacher_act_counts, teacher_act_means, teacher_act_stds
+    
+    return (mean_reward, std_reward), (mean_stages, std_stages), (mean_arcade_runs, std_arcade_runs), \
+        (avg_kl_divs, std_kl_divs), (teacher_act_counts, teacher_act_means, teacher_act_stds)
     #############################################################################################################################
 
 
 def eval_student_teacher_likelihood(
     student: PPO,
     env: gym.Env,
-    num_teachers: int,
+    teachers: dict[str: OnPolicyAlgorithm],
     n_eval_episodes: int = 10,
     deterministic: bool = True,
 ):
     """
     Evaluate student-teacher similarity
     Utilises code from stable_baselines3's evaluate_policy method, modified code is highlighted with ## MODIFIED ##.
+    NOTE: Outdated, can now do everything in arcade_metrics method above.
 
     :param student: Student policy.
     :param env: Environment for student to interact with.
@@ -419,10 +468,11 @@ def eval_student_teacher_likelihood(
     episode_count_targets = np.array([(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int")
 
     ########################################### MODIFIED #######################################
-    teacher_act_counts = np.zeros((num_teachers, env.action_space.shape[0], 1))
-    total_act_counts = np.zeros((num_teachers, env.action_space.shape[0], 1))
+    teacher_act_counts = {teacher_id: np.zeros((env.action_space.shape[0], 1))
+                          for teacher_id in teachers.keys()}
+    total_act_counts = np.zeros((env.action_space.shape[0], 1))
     
-    s_states, t_states = None, None
+    s_states = None
     observations = env.reset()
     episode_starts = np.ones((env.num_envs,), dtype=bool)
     while (episode_counts < episode_count_targets).any():
@@ -432,25 +482,35 @@ def eval_student_teacher_likelihood(
             episode_start=episode_starts,
             deterministic=deterministic,
         )
-        t_acts = np.array([observations["teacher_actions"][i] for i in range(n_envs)])
+        t_acts = {teacher_id: teacher_net.predict(observations, deterministic=deterministic)[0]
+                  for teacher_id, teacher_net in teachers.items()}
         
         observations, rewards, dones, infos = env.step(s_acts)
         for i in range(n_envs):
             if episode_counts[i] < episode_count_targets[i]:
-                for t_idx in range(num_teachers):
-                    for a_idx in range(len(s_acts[i])):
-                        t_act = t_acts[i, t_idx, a_idx]
+                for t_id in teachers.keys():
+                    for a_idx in range(s_acts[i].shape[0]):
+                        t_act = t_acts[t_id][i, a_idx]
                         s_act = s_acts[i, a_idx]
                         if t_act == s_act:
-                            teacher_act_counts[t_idx, a_idx, 0] += 1
-                        total_act_counts[t_idx, a_idx, 0] += 1
+                            teacher_act_counts[t_id][a_idx, 0] += 1
+                total_act_counts[:, 0] += 1
 
                 if dones[i]:
                     episode_counts[i] += 1
     
     # Bernoulli mean and std
-    teacher_act_means = teacher_act_counts / total_act_counts
-    teacher_act_stds = np.sqrt((teacher_act_means * (1 - teacher_act_means)) / total_act_counts)
+    teacher_act_means = {teacher_id: teacher_act_counts[teacher_id] / total_act_counts
+                        for teacher_id in teachers.keys()}
+    teacher_act_stds = {teacher_id: np.sqrt(
+                            (teacher_act_means[teacher_id] * (1 - teacher_act_means[teacher_id])) / total_act_counts
+                        ) for teacher_id in teachers.keys()}
+    
+    # Preprocess to lists for saving to json
+    for teacher_id in teachers.keys():
+        teacher_act_counts[teacher_id] = teacher_act_counts[teacher_id].tolist()
+        teacher_act_means[teacher_id] = teacher_act_means[teacher_id].tolist()
+        teacher_act_stds[teacher_id] = teacher_act_stds[teacher_id].tolist()
 
-    return teacher_act_counts.tolist(), teacher_act_means.tolist(), teacher_act_stds.tolist()
+    return teacher_act_counts, teacher_act_means, teacher_act_stds
     ############################################################################################

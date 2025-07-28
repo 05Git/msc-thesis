@@ -39,8 +39,9 @@ def main(cfg: str, deterministic: bool, dir_name: str, policy_path: str):
     save_path = os.path.join(configs["folders"]["model_folder"], f"seed_{configs['misc']['seed']}")
     checkpoint_path = os.path.join(save_path, model_checkpoint) if not policy_path else policy_path
     agent = load_agent(settings_config=configs, env=eval_env, policy_path=checkpoint_path, force_load=True)
-
-    reward_infos, episode_lengths, stages_infos, arcade_infos, kl_divs = evaluate_policy_with_arcade_metrics(
+    
+    reward_infos, episode_lengths, stages_infos, arcade_infos, kl_divs, \
+    teacher_act_counts, teacher_act_means, teacher_act_stds = evaluate_policy_with_arcade_metrics(
         model=agent,
         env=eval_env,
         teachers=configs["teachers"],
@@ -64,12 +65,15 @@ def main(cfg: str, deterministic: bool, dir_name: str, policy_path: str):
         "std_arcade_runs": np.std(arcade_infos),
         "mean_kl_divs": {id: np.mean(kl_div) for id, kl_div in kl_divs.items()},
         "std_kl_divs": {id: np.std(kl_div) for id, kl_div in kl_divs.items()},
+        "teacher_likelihood_scores": teacher_act_counts,
+        "teacher_likelihood_means": teacher_act_means,
+        "teacher_likelihood_stds": teacher_act_stds,
     }
-    
+    """
     if "eval_teacher_similarity" in configs["misc"].keys() and configs["misc"]["eval_teacher_similarity"]:
         teacher_act_counts, teacher_act_means, teacher_act_stds = eval_student_teacher_likelihood(
             student=agent,
-            num_teachers=len(configs["teachers"]),
+            teachers=configs["teachers"],
             env=eval_env,
             n_eval_episodes=configs["misc"]["n_eval_episodes"],
             deterministic=deterministic,
@@ -80,7 +84,7 @@ def main(cfg: str, deterministic: bool, dir_name: str, policy_path: str):
             "teacher_likelihood_means": teacher_act_means,
             "teacher_likelihood_stds": teacher_act_stds,
         })
-
+    """
     eval_env.close()
 
     # Save evaluation results

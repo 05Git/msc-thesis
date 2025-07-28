@@ -1,6 +1,6 @@
 folders:
   parent_dir: final_fusion_policies
-  model_name: hard_weights
+  model_name: soft_weights
 
 misc:
   seed: 0
@@ -10,32 +10,14 @@ misc:
   timesteps: 2_000_000
   model_checkpoint: "0"
   n_eval_episodes: 100
+  eval_teacher_similarity: True
 
 fusion_settings:
   use_expert_extractors: True
   predict_expert_values: True
-  expert_selection_method: hard_weights
+  expert_selection_method: soft_weights
   # fixed_weights: uniform
   # adaptive_weights_kwargs: [expert_value]
-
-# distil_settings:
-#   distil_type: ppd
-#   policy_path: fusion_policies/fixed_weights_uniform_ppd/model/seed_0/0_autosave_1500000.zip
-#   policy_settings:
-#     policy: CnnPolicy
-#     gamma: 0.99
-#     learning_rate: [2.5e-5, 2.5e-6]
-#     n_steps: 128
-#     gae_lambda: 0.95
-#     ent_coef: 0.
-#     vf_coef: 0.5
-#     max_grad_norm: 0.5
-#     use_sde: False
-#     sde_sample_freq: -1
-#     verbose: 1
-#   ppd_settings:
-#     distill_lambda: 0.5
-#     kl_mode: forward
 
 policy_settings:
   policy: CnnPolicy

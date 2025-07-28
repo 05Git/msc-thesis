@@ -192,6 +192,9 @@ def load_settings(cfg: str) -> dict:
         else:
             raise ValueError(f"Policy type must be 'CnnPolicy' or 'MultiInputPolicy'.")
         policy_settings["policy"] = MultiExpertFusionPolicy
+        if "custom_objects" not in policy_settings.keys():
+            policy_settings["custom_objects"] = dict()
+        policy_settings["custom_objects"].update({"policy_class": MultiExpertFusionPolicy})
 
         if "fusion_net_settings" in param_keys:
             agent_type = MultiExpertFusionNet

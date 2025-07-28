@@ -121,7 +121,7 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
                     nn.Linear(in_features=latent_dim_weights, out_features=self.n_experts, device=self.device),
                     nn.Softmax(dim=-1) # Softmax weights to be between [0,1]
                 )
-                # weights_net specific optim used to calculate auxiliary loss, if required
+                # weights_net specific optim used to calculate auxiliary loss
                 self.weights_net_optimizer = th.optim.Adam(
                     params=self.weights_net.parameters(),
                     **adaptive_weights_optimizer_kwargs
@@ -235,8 +235,8 @@ class MultiExpertFusionPolicy(ActorCriticPolicy):
                     action_weights = self.weights_net(latent_weights)
                     if "hard" in self.expert_selection_method:
                         action_weights_indices = th.argmax(action_weights, dim=1)
-                        action_weights = th.zeros((obs.shape[0], self.n_experts), device=self.device)
                         for action_idx, chosen_idx in enumerate(action_weights_indices):
+                            action_weights[action_idx][:] = 0
                             action_weights[action_idx][chosen_idx] = 1
                 
             else:
