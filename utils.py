@@ -21,6 +21,7 @@ from stable_baselines3.common import type_aliases, distributions
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Any, Callable, Optional, Union
 from FusionNet import MultiExpertFusionPolicy, MultiExpertFusionNet
+from collections import OrderedDict
 
 
 def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load: bool = False):
@@ -321,6 +322,8 @@ def evaluate_policy_with_arcade_metrics(
             if teachers is not None:
                 tensor_obs = obs_as_tensor(observations, model.device)
                 student_act_distribution = model.policy.get_distribution(tensor_obs)
+                if type(tensor_obs) == dict:
+                    tensor_obs = tensor_obs["image"]
                 for id, teacher in teachers.items():
                     teacher_act_distribution = teacher.policy.get_distribution(tensor_obs)
                     kl_div = distributions.kl_divergence(teacher_act_distribution, student_act_distribution)
@@ -333,7 +336,10 @@ def evaluate_policy_with_arcade_metrics(
                     kl_div = th.mean(kl_div).cpu().detach().numpy().tolist()
                     student_teacher_divergences[id].append(kl_div)
                 
-                t_acts = {t_id: t_net.predict(observations, deterministic=deterministic)[0]
+                teacher_obs = observations
+                if type(teacher_obs) == OrderedDict:
+                    teacher_obs = teacher_obs["image"]
+                t_acts = {t_id: t_net.predict(teacher_obs, deterministic=deterministic)[0]
                         for t_id, t_net in teachers.items()}                
             ################################################################################################
 

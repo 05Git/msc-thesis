@@ -3,12 +3,12 @@ folders:
   model_name: sequential
 
 misc:
-  seed: 100
+  seed: 500
   num_players: 2
   num_train_envs: 8
   num_eval_envs: 4
   timesteps: 500_000
-  model_checkpoint: "0" # "500000", "1000000", "1500000"
+  model_checkpoint: "0" # "500000", "1000000"
   n_eval_episodes: 100
 
 policy_settings:
@@ -22,7 +22,7 @@ policy_settings:
   n_steps: 128
   batch_size: 1024 # batch_size % num_envs should equal 0
   gae_lambda: 0.95
-  ent_coef: 0.02
+  ent_coef: 0.
   vf_coef: 0.5
   target_kl: null
   max_grad_norm: 0.5

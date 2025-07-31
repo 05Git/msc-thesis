@@ -49,7 +49,7 @@ policy_settings:
   n_steps: 128
   batch_size: 1024 # batch_size % num_envs should equal 0
   gae_lambda: 0.95
-  ent_coef: 0.01
+  ent_coef: 0.
   vf_coef: 0.5
   target_kl: null
   max_grad_norm: 0.5

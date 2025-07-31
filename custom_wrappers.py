@@ -156,7 +156,8 @@ class TeacherInputWrapper(gym.Wrapper):
         initial_epsilon: float = 1.,
     ):
         super().__init__(env)
-        self.teachers = teachers
+        self.teachers = list(teachers.values())
+        self.n_teachers = len(teachers)
         self.deterministic = deterministic
         if teacher_action_space == "multi_discrete":
             action_space_shape = env.action_space.nvec
@@ -167,21 +168,19 @@ class TeacherInputWrapper(gym.Wrapper):
         if isinstance(env.observation_space, gym.spaces.Box):
             self.observation_space = gym.spaces.Dict({
                 "image": env.observation_space,
-                **{id: gym.spaces.Box(
-                        low=np.zeros_like(action_space_shape),
-                        high=np.array(action_space_shape),
-                        dtype=np.uint8
-                    ) for id in teachers.keys()
-                }
+                "teacher_actions": gym.spaces.Box(
+                    low=np.array([np.zeros_like(action_space_shape)] * self.n_teachers).reshape(self.n_teachers, len(action_space_shape)),
+                    high=np.array([action_space_shape] * self.n_teachers).reshape(self.n_teachers, len(action_space_shape)),
+                    dtype=np.uint8,
+                )
             })
         elif isinstance(env.observation_space, gym.spaces.Dict):
             self.observation_space = env.observation_space
-            for id in teachers.keys():
-                self.observation_space[id] = gym.spaces.Box(
-                    low=np.zeros_like(action_space_shape),
-                    high=np.array(action_space_shape),
-                    dtype=np.uint8
-                )
+            self.observation_space["teacher_actions"] = gym.spaces.Box(
+                low=np.array([np.zeros_like(action_space_shape)] * self.n_teachers).reshape(self.n_teachers, len(action_space_shape)),
+                high=np.array([action_space_shape] * self.n_teachers).reshape(self.n_teachers, len(action_space_shape)),
+                dtype=np.uint8,
+            )
         else:
             raise Exception("Base env observation space must be Box or Dict")
         
@@ -212,28 +211,26 @@ class TeacherInputWrapper(gym.Wrapper):
         return self.observation(obs), reward, terminated, truncated, info
 
     def observation(self, observation):
-        # Add teachers' recommended actions to vector observations
-        teacher_actions = {}
-        teacher_observation = observation["image"] if isinstance(observation, dict) else observation
-        for id, teacher in self.teachers.items():
-            action, _ = teacher.predict(teacher_observation, deterministic=self.deterministic)
-            teacher_actions[id] = action
+        teacher_actions = []
+        for teacher in self.teachers:
+            action, _ = teacher.predict(observation, deterministic=self.deterministic)
+            teacher_actions.append(action)
+        teacher_actions = np.array(teacher_actions)
         self.teacher_actions = teacher_actions
         if type(observation) == dict:
-            observation.update(teacher_actions)
+            observation.update({"teacher_actions": teacher_actions})
         else:
-            observation = {"image": observation, **teacher_actions}
+            observation = {"image": observation, "teacher_actions": teacher_actions}
         return observation
     
     def action(self, action):
-        # Replace the student's action with a random teacher's action with probability (epsilon)
         epsilon = self.progress * self.initial_epsilon
-        teacher_id = np.random.choice(list(self.teachers.keys()))
+        teacher_action_idx = np.random.choice(range(len(self.teacher_actions)))
         p = np.random.rand()
         if p > epsilon:
             return action
         else:
-            return self.teacher_actions[teacher_id]
+            return self.teacher_actions[teacher_action_idx]
 
 
 class PixelObsWrapper(gym.ObservationWrapper):
