@@ -3,12 +3,12 @@ folders:
   model_name: rl_teacher_obs
 
 misc:
-  seed: 500
+  seed: 300
   num_players: 1
   num_train_envs: 8
   num_eval_envs: 4
   timesteps: 2_000_000
-  model_checkpoint: "2000000"
+  model_checkpoint: "0"
   n_eval_episodes: 100
 
 policy_settings:
@@ -36,8 +36,6 @@ teachers:
   antiair_teacher: experts/from_scratch/antiair/model/seed_0/500000.zip
   attack_teacher: experts/from_scratch/attack_rand/model/seed_0/500000.zip
   defence_teacher: experts/from_scratch/defence/model/seed_0/500000.zip
-
-teacher_probabilities: null
 
 callbacks_settings:
   autosave: False

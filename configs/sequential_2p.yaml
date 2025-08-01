@@ -8,7 +8,7 @@ misc:
   num_train_envs: 8
   num_eval_envs: 4
   timesteps: 500_000
-  model_checkpoint: "0" # "500000", "1000000"
+  model_checkpoint: "1000000" # "500000", "1000000"
   n_eval_episodes: 100
 
 policy_settings:
@@ -73,7 +73,7 @@ wrappers_settings:
     [att_train, {}], # att_train, def_train, att_train
     [pixelobs, {}],
     [opp_controller, {
-      opp_type: rand # rand, rand, jump
+      opp_type: jump # rand, rand, jump
     }],
     [2ptrain, {}],
   ]
