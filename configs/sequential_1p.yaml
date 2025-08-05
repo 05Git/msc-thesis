@@ -3,7 +3,7 @@ folders:
   model_name: sequential
 
 misc:
-  seed: 300
+  seed: 800
   num_players: 1
   num_train_envs: 8
   num_eval_envs: 4
