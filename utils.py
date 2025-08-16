@@ -458,7 +458,6 @@ def eval_student_teacher_likelihood(
     """
     Evaluate student-teacher similarity
     Utilises code from stable_baselines3's evaluate_policy method, modified code is highlighted with ## MODIFIED ##.
-    NOTE: Outdated, can now do everything in arcade_metrics method above.
 
     :param student: Student policy.
     :param env: Environment for student to interact with.

@@ -38,7 +38,7 @@ def main(cfg: str, policy_path: str, deterministic: bool):
     load_path = os.path.join(configs["folders"]["model_folder"], f"seed_{configs['misc']['seed']}")
     checkpoint_path = os.path.join(load_path, model_checkpoint) if not policy_path else policy_path
     agent = load_agent(settings_config=configs, env=env, policy_path=checkpoint_path, force_load=True)
-
+    
     obs = env.reset()
     check_weights = 500
     check_info = 10
@@ -56,11 +56,11 @@ def main(cfg: str, policy_path: str, deterministic: bool):
                 print(f"{expert_id} weight: {round(expert_weight, 5) * 100}")
 
         obs, rew, done, info = env.step(actions)
-        if progress % check_info == 0:
-            print(f"Actions: {actions}")
-            # print(f"Observation: {obs}")
-            print(f"Reward: {rew}")
-            # print(f"Info: {info}")
+        # if progress % check_info == 0:
+        #     print(f"Actions: {actions}")
+        #     print(f"Observation: {obs}")
+        #     print(f"Reward: {rew}")
+        #     print(f"Info: {info}")
         
         if done:
             break

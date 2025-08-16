@@ -10,12 +10,11 @@ misc:
   timesteps: 2_000_000
   model_checkpoint: "0"
   n_eval_episodes: 100
-  eval_teacher_similarity: True
 
 fusion_settings:
   use_expert_extractors: True
   predict_expert_values: True
-  expert_selection_method: soft_weights
+  expert_selection_method: hard_weights
   # fixed_weights: uniform
   # adaptive_weights_kwargs: [expert_value]
 
