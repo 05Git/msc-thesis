@@ -1,0 +1,80 @@
+{
+    "teacher_likelihood_scores": {
+        "antiair_teacher": [
+            [
+                0.0
+            ],
+            [
+                0.0
+            ]
+        ],
+        "attack_teacher": [
+            [
+                184409.0
+            ],
+            [
+                184409.0
+            ]
+        ],
+        "defence_teacher": [
+            [
+                78665.0
+            ],
+            [
+                78665.0
+            ]
+        ]
+    },
+    "teacher_likelihood_means": {
+        "antiair_teacher": [
+            [
+                0.0
+            ],
+            [
+                0.0
+            ]
+        ],
+        "attack_teacher": [
+            [
+                0.7009776716817321
+            ],
+            [
+                0.7009776716817321
+            ]
+        ],
+        "defence_teacher": [
+            [
+                0.29902232831826786
+            ],
+            [
+                0.29902232831826786
+            ]
+        ]
+    },
+    "teacher_likelihood_stds": {
+        "antiair_teacher": [
+            [
+                0.0
+            ],
+            [
+                0.0
+            ]
+        ],
+        "attack_teacher": [
+            [
+                0.0008926165555871131
+            ],
+            [
+                0.0008926165555871131
+            ]
+        ],
+        "defence_teacher": [
+            [
+                0.0008926165555871131
+            ],
+            [
+                0.0008926165555871131
+            ]
+        ]
+    }
+}
