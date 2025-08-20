@@ -3,17 +3,13 @@
 /results (old)/
 /tensorboards/
 *.zip
-/sb3/recordings/
+/recordings/
 *.diambra
 *.pt
 *.pkl
 *.gz
 /.vscode/
 /__pycache__/
-/sb3_distill/
 sb3-imitation.yaml
 /scripts/
 /test_policies/
-/final (old)/
-/experts/
-/final_policies/

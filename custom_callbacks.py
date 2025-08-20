@@ -1,3 +1,6 @@
+"""
+custom_callbacks.py: Custom callbacks to track metrics during training
+"""
 import warnings
 import os
 import gymnasium as gym
@@ -95,6 +98,7 @@ class ArcadeMetricsTrainCallback(BaseCallback):
                 self.stages_completed[idx] += 1
 
             if dones[idx]:
+                # Check if the final stage was actually cleared or not
                 self.arcade_runs_completed[idx] = True if info["stage_done"] else False
                 self.logger.record("rollout/arcade_runs_completed", self.arcade_runs_completed.sum())
 
@@ -163,7 +167,10 @@ class UniqueActionsCallback(BaseCallback):
             raise ValueError("Expected observation to be a dict with 'last_actions'")
         
         num_unique_actions = np.zeros(last_actions.shape[2], dtype=np.float32)
+        # Cycle through last_actions from each parallel environment
         for env_actions in last_actions:
+            # Transpose env_actions to arrange actions by action index
+            # [[act_0, act_0, ...],[act_1, act_1, ...]] instead of [[act_0, act_1], [act_0, act_1], ...]
             for idx, action_list in enumerate(env_actions.T):
                 num_unique_actions[idx] += len(set(action_list))
         num_unique_actions /= last_actions.shape[0]
@@ -181,7 +188,6 @@ class ArcadeMetricsEvalCallback(EventCallback):
     Extended EvalCallback to include custom arcade metrics. All lines of code which have been changed or added are marked with ## MODIFIED ##.
     Original code available at: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/callbacks.py#L341
     """
-
     def __init__(
         self,
         eval_env: Union[gym.Env, VecEnv],
@@ -201,7 +207,6 @@ class ArcadeMetricsEvalCallback(EventCallback):
         episode_num: int | None = None,
     ):
         super().__init__(callback_after_eval, verbose=verbose)
-
 
         ##################################### MODIFIED ###########################################
         # Logs will be written in ``evaluations.npz``

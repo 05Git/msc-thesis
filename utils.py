@@ -123,7 +123,6 @@ def load_agent(settings_config: dict, env: gym.Env, policy_path: str, force_load
             raise Exception("\nInvalid student policy checkpoint, please check path provided.")
         
         # Check for specific PPD settings
-        # TODO: Test if this check is necessary
         for param in agent.policy.parameters():
             param.requires_grad = False # Don't think this is absolutely necessary, but leaving it here just in case
         if student_type == ProximalPolicyDistillation:

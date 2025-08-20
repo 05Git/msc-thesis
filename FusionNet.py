@@ -1,3 +1,6 @@
+"""
+FusionNet.py: Ensemble policy which performs actions according to weighted expert policy action distributions.
+"""
 import gymnasium as gym
 import torch as th
 import torch.nn as nn
@@ -379,6 +382,7 @@ class MultiExpertFusionNet(PPO):
         assert auxiliary_loss_coef >= 0 and auxiliary_loss_coef <= 1
         self.auxiliary_loss_coef = auxiliary_loss_coef
         
+        # Set up linear function to decay coefficient by 
         assert div_loss_coef_init <= 1
         assert div_loss_coef_init >= div_loss_coef_end
         assert div_loss_coef_end >= 0

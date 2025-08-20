@@ -56,11 +56,11 @@ def main(cfg: str, policy_path: str, deterministic: bool):
                 print(f"{expert_id} weight: {round(expert_weight, 5) * 100}")
 
         obs, rew, done, info = env.step(actions)
-        # if progress % check_info == 0:
-        #     print(f"Actions: {actions}")
-        #     print(f"Observation: {obs}")
-        #     print(f"Reward: {rew}")
-        #     print(f"Info: {info}")
+        if progress % check_info == 0:
+            print(f"Actions: {actions}")
+            print(f"Observation: {obs}")
+            print(f"Reward: {rew}")
+            print(f"Info: {info}")
         
         if done:
             break

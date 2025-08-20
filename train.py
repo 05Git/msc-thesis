@@ -31,27 +31,19 @@ def main(cfg: str, policy_path: str, deterministic: bool):
             "no_attack": 0,
         }])
     
-    # train_env, eval_env = train_eval_split(
-    #     game_id=configs["train_settings"].game_id,
-    #     num_train_envs=configs["misc"]["num_train_envs"],
-    #     num_eval_envs=configs["misc"]["num_eval_envs"],
-    #     train_settings=configs["train_settings"],
-    #     eval_settings=configs["eval_settings"],
-    #     train_wrappers=configs["train_wrappers"],
-    #     eval_wrappers=configs["eval_wrappers"],
-    #     seed=configs["misc"]["seed"]
-    # )
-    # # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
-    # train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
-
-    train_env, num_envs = make_sb3_env(
+    train_env, eval_env = train_eval_split(
         game_id=configs["train_settings"].game_id,
-        env_settings=configs["train_settings"],
-        wrappers_settings=configs["train_wrappers"],
+        num_train_envs=configs["misc"]["num_train_envs"],
+        num_eval_envs=configs["misc"]["num_eval_envs"],
+        train_settings=configs["train_settings"],
+        eval_settings=configs["eval_settings"],
+        train_wrappers=configs["train_wrappers"],
+        eval_wrappers=configs["eval_wrappers"],
         seed=configs["misc"]["seed"]
     )
-    train_env = VecTransposeImage(train_env)
-    set_random_seed(configs["misc"]["seed"])
+    num_train_envs = configs["misc"]["num_train_envs"]
+    # Transpose the env's images so that they have shape (C,H,W) instead of (H,W,C) (stable_baselines3 requires channel first observations)
+    train_env, eval_env = VecTransposeImage(train_env), VecTransposeImage(eval_env)
     
     # Load a policy
     model_checkpoint = configs["misc"]["model_checkpoint"]
@@ -65,7 +57,7 @@ def main(cfg: str, policy_path: str, deterministic: bool):
     if "autosave" in callbacks_config.keys() and callbacks_config["autosave"]:
         auto_save_callback = AutoSave(
             check_freq=callbacks_config["check_freq"],
-            num_envs=num_envs,
+            num_envs=num_train_envs,
             save_path=save_path,
             filename_prefix=model_checkpoint + "_"
         )
@@ -80,13 +72,13 @@ def main(cfg: str, policy_path: str, deterministic: bool):
         else:
             after_eval = None
         eval_callback = cc.ArcadeMetricsEvalCallback(
-            eval_env=train_env,
+            eval_env=eval_env,
             n_eval_episodes=callbacks_config["n_eval_episodes"],
             teachers=configs["teachers"],
-            eval_freq=max(callbacks_config["eval_freq"] // num_envs, 1),
+            eval_freq=max(callbacks_config["eval_freq"] // num_train_envs, 1),
             log_path=save_path,
             best_model_save_path=save_path,
-            deterministic=True,
+            deterministic=deterministic,
             render=False,
             callback_after_eval=after_eval,
             verbose=1,
@@ -127,7 +119,7 @@ def main(cfg: str, policy_path: str, deterministic: bool):
     agent.save(model_path)
 
     train_env.close()
-    # eval_env.close()
+    eval_env.close()
 
     return 0
 

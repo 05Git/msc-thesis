@@ -1,6 +1,6 @@
 """
 RND.py: PPO policy adjusted to use random newtork distillation
-Random network distillation paper: ___
+Random network distillation paper: https://arxiv.org/pdf/1810.12894
 stable_baselines3's PPO implementation used
 RND model based on code available at: https://github.com/jcwleo/random-network-distillation-pytorch
 """
@@ -143,20 +143,31 @@ class RNDPPO(PPO):
             if self.rnd_model.rnd_type == "state-action":
                 obs_tensor = {"image": obs_tensor, "actions": th.tensor(clipped_actions, device=self.device)}
             predicted_features, target_features = self.rnd_model.forward(obs_tensor)
+
+            # Calculate intrinsic rewards
             int_rewards = (target_features - predicted_features).pow(2).sum(1) / 2
             int_rewards = int_rewards.detach().cpu().numpy()
+
+            # Update running mean and std
             self.rnd_running_mean = 0.99 * self.rnd_running_mean + 0.01 * np.mean(int_rewards)
             self.rnd_running_std = 0.99 * self.rnd_running_std + 0.01 * np.std(int_rewards)
             if self.rnd_running_std == 0:
                 self.rnd_running_std += 1e-8
+
+            # Normalise and clip intrinsic rewards
             int_rewards = (int_rewards - self.rnd_running_mean) / self.rnd_running_std
             int_rewards_clamped = np.clip(int_rewards, -5.0, 5.0)
+
+            # Add weighted intrinsic rewards to environment reward signal
             rewards = rewards.squeeze() # Needed for 2-player envs, otherwise it has shape (8,1) instead of (8,)
             rewards += self.int_beta * int_rewards_clamped
+
+            # Calculate loss and step optimiser
             predictor_loss = F.mse_loss(predicted_features, target_features)
             self.rnd_model.optimizer.zero_grad()
             predictor_loss.backward()
             self.rnd_model.optimizer.step()
+
             self.logger.record("RND/intrinsic_reward", np.mean(int_rewards_clamped))
             self.logger.record("RND/int_reward_unclamped", np.mean(int_rewards))
             self.logger.record("RND/rnd_model_loss", np.mean(predictor_loss.detach().cpu().numpy()))
@@ -284,6 +295,7 @@ class RNDModel(nn.Module):
             nn.Linear(feature_size, feature_size)
         )
 
+        # Random network that predictor network predicts the output of
         self.target = nn.Sequential(
             nn.Linear(feature_output, feature_size)
         )
