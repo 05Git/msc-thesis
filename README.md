@@ -15,3 +15,7 @@ Helper functions, callbacks and wrappers can be found in ```utils.py```, ```cust
 Code for imitation learning and random network distillation are in ```imitate.py``` and ```RND.py```.
 
 The notebook ```plot_results.ipynb``` was used to collect, average out and plot results.
+
+The ```configs``` folder contains various ```.yaml``` files used to set up experiments, which were read by ```settings.py```.
+
+The TensorBoards of each policy can be found in the various ```policies``` and ```experts``` folders. Training data averaged over multiple seeds is stored in the ```averaged_tb_data``` folder, and averaged Expert-FuseNet action similarity data is stored in the ```averaged_sim_data``` folder.
